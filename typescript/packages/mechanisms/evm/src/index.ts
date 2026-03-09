@@ -39,3 +39,16 @@ export {
   eip3009ABI,
   x402ExactPermit2ProxyABI,
 } from "./constants";
+
+// Confidential scheme client
+export { ConfidentialEvmScheme } from "./confidential";
+
+// Confidential types
+export type {
+  ConfidentialEvmPayload,
+  ConfidentialExtra,
+  ConfidentialCiphertext,
+  BabyJubJubPoint,
+  ConfidentialAuthorization,
+} from "./confidential/types";
+export { isConfidentialPayload } from "./confidential/types";

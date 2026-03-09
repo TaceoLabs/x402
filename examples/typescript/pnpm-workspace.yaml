@@ -2,6 +2,8 @@ packages:
   - "clients/*"
   - "servers/*"
   - "fullstack/*"
+  - "agent-confidential"
+  - "agent-confidential/frontend"
   - "facilitator"
   - "legacy/facilitator"
   - "legacy/servers/*"

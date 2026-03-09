@@ -120,6 +120,36 @@
         "types": "./dist/cjs/exact/v1/facilitator/index.d.ts",
         "default": "./dist/cjs/exact/v1/facilitator/index.js"
       }
+    },
+    "./confidential/client": {
+      "import": {
+        "types": "./dist/esm/confidential/client/index.d.mts",
+        "default": "./dist/esm/confidential/client/index.mjs"
+      },
+      "require": {
+        "types": "./dist/cjs/confidential/client/index.d.ts",
+        "default": "./dist/cjs/confidential/client/index.js"
+      }
+    },
+    "./confidential/server": {
+      "import": {
+        "types": "./dist/esm/confidential/server/index.d.mts",
+        "default": "./dist/esm/confidential/server/index.mjs"
+      },
+      "require": {
+        "types": "./dist/cjs/confidential/server/index.d.ts",
+        "default": "./dist/cjs/confidential/server/index.js"
+      }
+    },
+    "./confidential/facilitator": {
+      "import": {
+        "types": "./dist/esm/confidential/facilitator/index.d.mts",
+        "default": "./dist/esm/confidential/facilitator/index.mjs"
+      },
+      "require": {
+        "types": "./dist/cjs/confidential/facilitator/index.d.ts",
+        "default": "./dist/cjs/confidential/facilitator/index.js"
+      }
     }
   },
   "files": [
