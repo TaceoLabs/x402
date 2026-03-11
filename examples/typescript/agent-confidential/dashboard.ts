@@ -21,6 +21,7 @@ import {
   http,
   defineChain,
 } from "viem";
+import { baseSepolia } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 import { publicActions } from "viem";
 import { x402Client, x402HTTPClient } from "@x402/axios";
@@ -45,17 +46,19 @@ if (!AGENT_KEY) {
 
 // ── Chain & x402 Client ─────────────────────────────────────────────────────────
 
-const anvil = defineChain({
-  id: CHAIN_ID,
-  name: "Anvil",
-  nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-  rpcUrls: { default: { http: [RPC_URL] } },
-});
+const chain = CHAIN_ID === 84532
+  ? defineChain({ ...baseSepolia, rpcUrls: { default: { http: [RPC_URL] } } })
+  : defineChain({
+      id: CHAIN_ID,
+      name: "Anvil",
+      nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+      rpcUrls: { default: { http: [RPC_URL] } },
+    });
 
 const account = privateKeyToAccount(AGENT_KEY);
 const viemClient = createWalletClient({
   account,
-  chain: anvil,
+  chain,
   transport: http(RPC_URL),
 }).extend(publicActions);
 
@@ -129,9 +132,11 @@ app.get("/api/events", (_req: Request, res: Response) => {
 
 app.get("/api/status", async (_req: Request, res: Response) => {
   try {
-    const [serverHealth, facilitatorHealth] = await Promise.allSettled([
+    const MPC_URL = process.env.MPC_BALANCE_CHECK_URL;
+    const [serverHealth, facilitatorHealth, mpcHealth] = await Promise.allSettled([
       axios.get(`${SERVER_URL}/health`, { timeout: 2000 }),
       axios.get("http://localhost:4022/health", { timeout: 2000 }),
+      MPC_URL ? axios.get(`${MPC_URL}/health`, { timeout: 2000 }) : Promise.reject("not configured"),
     ]);
 
     // Read agent balance commitment
@@ -162,7 +167,10 @@ app.get("/api/status", async (_req: Request, res: Response) => {
       facilitator: {
         status: facilitatorHealth.status === "fulfilled" ? "online" : "offline",
       },
-      chain: { id: CHAIN_ID, rpc: RPC_URL },
+      mpc: {
+        status: mpcHealth.status === "fulfilled" ? "online" : "offline",
+      },
+      chain: { id: CHAIN_ID, rpc: RPC_URL, name: CHAIN_ID === 84532 ? "Base Sepolia" : "Anvil" },
     });
   } catch {
     res.status(500).json({ error: "Failed to check status" });

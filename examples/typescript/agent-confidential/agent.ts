@@ -18,6 +18,7 @@ import {
   http,
   defineChain,
 } from "viem";
+import { baseSepolia } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 import { publicActions } from "viem";
 import { x402Client, wrapAxiosWithPayment, x402HTTPClient } from "@x402/axios";
@@ -39,17 +40,19 @@ if (!AGENT_KEY) {
 
 // ── Chain & Signer ─────────────────────────────────────────────────────────────
 
-const anvil = defineChain({
-  id: CHAIN_ID,
-  name: "Anvil",
-  nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-  rpcUrls: { default: { http: [RPC_URL] } },
-});
+const chain = CHAIN_ID === 84532
+  ? defineChain({ ...baseSepolia, rpcUrls: { default: { http: [RPC_URL] } } })
+  : defineChain({
+      id: CHAIN_ID,
+      name: "Anvil",
+      nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+      rpcUrls: { default: { http: [RPC_URL] } },
+    });
 
 const account = privateKeyToAccount(AGENT_KEY);
 const viemClient = createWalletClient({
   account,
-  chain: anvil,
+  chain,
   transport: http(RPC_URL),
 }).extend(publicActions);
 

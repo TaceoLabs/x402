@@ -31,5 +31,6 @@ export interface ServiceStatus {
   agent: { address: string };
   server: { status: string; url: string };
   facilitator: { status: string };
-  chain: { id: number; rpc: string };
+  mpc?: { status: string };
+  chain: { id: number; rpc: string; name?: string };
 }

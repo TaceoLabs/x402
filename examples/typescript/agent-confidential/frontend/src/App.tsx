@@ -76,8 +76,14 @@ export default function App() {
             </p>
           </div>
           <div className="flex items-center gap-4 text-xs">
+            {status?.chain?.name && (
+              <span className="text-slate-500 border border-slate-700 rounded px-2 py-0.5">
+                {status.chain.name}
+              </span>
+            )}
             <StatusDot label="Server" online={status?.server.status === "online"} />
             <StatusDot label="Facilitator" online={status?.facilitator.status === "online"} />
+            {status?.mpc && <StatusDot label="MPC" online={status.mpc.status === "online"} />}
             <StatusDot label="Chain" online={!!status?.chain} />
           </div>
         </div>
@@ -242,9 +248,16 @@ function AboutPage({ onStart, status }: { onStart: () => void; status: ServiceSt
                 desc="Verifies payments & settles on-chain (port 4022)"
                 online={status?.facilitator.status === "online"}
               />
+              {status?.mpc && (
+                <Actor
+                  name="Mock MPC"
+                  desc="Processes action queue & balance checks (port 4023)"
+                  online={status.mpc.status === "online"}
+                />
+              )}
               <Actor
                 name="Blockchain"
-                desc="Local Anvil chain with confidential token contract"
+                desc={status?.chain?.name === "Base Sepolia" ? "Base Sepolia testnet with confidential token contract" : "Local Anvil chain with confidential token contract"}
                 online={!!status?.chain}
               />
               <Actor

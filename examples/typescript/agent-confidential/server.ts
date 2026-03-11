@@ -12,6 +12,8 @@ import { config } from "dotenv";
 config();
 
 import express from "express";
+import { defineChain } from "viem";
+import { baseSepolia } from "viem/chains";
 import { paymentMiddleware, x402ResourceServer } from "@x402/express";
 import { HTTPFacilitatorClient } from "@x402/core/server";
 import { ConfidentialEvmScheme } from "@x402/evm/confidential/server";

@@ -4,10 +4,16 @@
   "type": "module",
   "scripts": {
     "deploy": "tsx deploy.ts",
+    "deploy:sepolia": "tsx deploy-sepolia.ts",
     "facilitator": "tsx facilitator.ts",
+    "facilitator:sepolia": "dotenv -e .env.sepolia -- tsx facilitator.ts",
     "server": "tsx server.ts",
+    "server:sepolia": "dotenv -e .env.sepolia -- tsx server.ts",
     "agent": "tsx agent.ts",
+    "agent:sepolia": "dotenv -e .env.sepolia -- tsx agent.ts",
     "dashboard": "tsx dashboard.ts",
+    "dashboard:sepolia": "dotenv -e .env.sepolia -- tsx dashboard.ts",
+    "mock-mpc": "dotenv -e .env.sepolia -- tsx mock-mpc.ts",
     "frontend:install": "cd frontend && pnpm install",
     "frontend:dev": "cd frontend && pnpm dev",
     "frontend:build": "cd frontend && pnpm build"
@@ -24,6 +30,7 @@
   },
   "devDependencies": {
     "@types/express": "^5.0.1",
+    "dotenv-cli": "^7.4.4",
     "tsx": "^4.7.0",
     "typescript": "^5.3.0"
   }

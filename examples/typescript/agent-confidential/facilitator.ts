@@ -11,12 +11,14 @@ import { config } from "dotenv";
 config();
 
 import express from "express";
+import axios from "axios";
 import {
   createPublicClient,
   createWalletClient,
   http,
   defineChain,
 } from "viem";
+import { baseSepolia } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 import { publicActions } from "viem";
 import { x402Facilitator } from "@x402/core/facilitator";
@@ -37,6 +39,7 @@ const FACILITATOR_KEY = process.env.FACILITATOR_PRIVATE_KEY as `0x${string}`;
 const PRIVATE_BALANCE_ADDRESS = process.env.PRIVATE_BALANCE_ADDRESS as `0x${string}`;
 const MPC_PK_X = process.env.MPC_PK_X!;
 const MPC_PK_Y = process.env.MPC_PK_Y!;
+const MPC_BALANCE_CHECK_URL = process.env.MPC_BALANCE_CHECK_URL;
 
 if (!FACILITATOR_KEY || !PRIVATE_BALANCE_ADDRESS) {
   console.error("Missing required env vars. Run 'pnpm run deploy' first.");
@@ -45,17 +48,19 @@ if (!FACILITATOR_KEY || !PRIVATE_BALANCE_ADDRESS) {
 
 // ── Chain & Clients ────────────────────────────────────────────────────────────
 
-const anvil = defineChain({
-  id: CHAIN_ID,
-  name: "Anvil",
-  nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-  rpcUrls: { default: { http: [RPC_URL] } },
-});
+const chain = CHAIN_ID === 84532
+  ? defineChain({ ...baseSepolia, rpcUrls: { default: { http: [RPC_URL] } } })
+  : defineChain({
+      id: CHAIN_ID,
+      name: "Anvil",
+      nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+      rpcUrls: { default: { http: [RPC_URL] } },
+    });
 
 const account = privateKeyToAccount(FACILITATOR_KEY);
 const viemClient = createWalletClient({
   account,
-  chain: anvil,
+  chain,
   transport: http(RPC_URL),
 }).extend(publicActions);
 
@@ -93,6 +98,32 @@ app.use(express.json({ limit: "10mb" }));
 app.post("/verify", async (req, res) => {
   try {
     const { paymentPayload, paymentRequirements } = req.body;
+
+    // Balance check via Mock MPC (if configured)
+    if (MPC_BALANCE_CHECK_URL) {
+      try {
+        const payload = paymentPayload as PaymentPayload;
+        const requirements = paymentRequirements as PaymentRequirements;
+        const auth = (payload.payload as Record<string, unknown>)?.authorization as Record<string, unknown> | undefined;
+        const sender = auth?.sender as string | undefined;
+        const amount = requirements?.amount;
+
+        if (sender && amount) {
+          const { data } = await axios.post(`${MPC_BALANCE_CHECK_URL}/balance-check`, {
+            sender,
+            amount,
+          });
+          if (!data.sufficient) {
+            console.log(`[Facilitator] Balance check failed: ${sender} has insufficient funds`);
+            return res.json({ isValid: false, invalidReason: "insufficient_confidential_balance" });
+          }
+          console.log(`[Facilitator] Balance check passed for ${sender}`);
+        }
+      } catch (err) {
+        console.warn("[Facilitator] Balance check unavailable, skipping:", err instanceof Error ? err.message : err);
+      }
+    }
+
     const response = await facilitator.verify(
       paymentPayload as PaymentPayload,
       paymentRequirements as PaymentRequirements,
