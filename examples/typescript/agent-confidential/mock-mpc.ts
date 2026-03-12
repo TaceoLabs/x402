@@ -165,15 +165,9 @@ interface BalanceEntry {
 
 const balances = new Map<string, BalanceEntry>();
 
-// Initialize with deploy-time values
-const AGENT_ADDRESS = process.env.AGENT_ADDRESS;
-if (AGENT_ADDRESS) {
-  balances.set(getAddress(AGENT_ADDRESS).toLowerCase(), {
-    balance: BigInt(100_000_000), // 100 USDC
-    randomness: BigInt("12345678901234567890"),
-  });
-  console.log(`[MPC] Initialized agent ${AGENT_ADDRESS} with 100 USDC`);
-}
+// No hardcoded balances — real USDC deposits via deposit-sepolia.ts create Deposit
+// actions in the queue, which this service processes to build balance commitments.
+console.log(`[MPC] Starting with empty balance map — balances populated via on-chain deposits`);
 
 function getBalance(address: string): BalanceEntry {
   return balances.get(address.toLowerCase()) || { balance: BigInt(0), randomness: BigInt(0) };

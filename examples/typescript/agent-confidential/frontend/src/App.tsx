@@ -235,7 +235,7 @@ function AboutPage({ onStart, status }: { onStart: () => void; status: ServiceSt
           {/* Actors */}
           <div className="bg-slate-900 rounded-xl border border-slate-800 p-6 space-y-4">
             <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wider">
-              Components running locally
+              Demo components
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
               <Actor
@@ -257,7 +257,7 @@ function AboutPage({ onStart, status }: { onStart: () => void; status: ServiceSt
               )}
               <Actor
                 name="Blockchain"
-                desc={status?.chain?.name === "Base Sepolia" ? "Base Sepolia testnet with confidential token contract" : "Local Anvil chain with confidential token contract"}
+                desc={status?.chain?.name ? `${status.chain.name} — confidential token contract` : "Confidential token contract on-chain"}
                 online={!!status?.chain}
               />
               <Actor

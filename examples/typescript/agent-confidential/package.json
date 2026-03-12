@@ -14,6 +14,7 @@
     "dashboard": "tsx dashboard.ts",
     "dashboard:sepolia": "dotenv -e .env.sepolia -- tsx dashboard.ts",
     "mock-mpc": "dotenv -e .env.sepolia -- tsx mock-mpc.ts",
+    "deposit:sepolia": "dotenv -e .env.sepolia -- tsx deposit-sepolia.ts",
     "frontend:install": "cd frontend && pnpm install",
     "frontend:dev": "cd frontend && pnpm dev",
     "frontend:build": "cd frontend && pnpm build"
