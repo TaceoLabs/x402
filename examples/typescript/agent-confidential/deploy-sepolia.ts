@@ -49,10 +49,10 @@ if (!MPC_KEY || !FACILITATOR_KEY || !AGENT_KEY || !SERVER_KEY) {
   process.exit(1);
 }
 
-// Path to forge artifacts
+// Path to contract artifacts — uses local ./artifacts/ by default (committed to repo)
 const CONTRACTS_OUT = resolve(
   __dirname,
-  process.env.CONTRACTS_OUT_DIR || "../../../../../private_deposit/contracts/out",
+  process.env.CONTRACTS_OUT_DIR || "./artifacts",
 );
 
 // BabyJubJub base point (a valid point on the curve — used as mock MPC public keys)
@@ -69,8 +69,10 @@ const chain = defineChain({
 });
 
 function loadArtifact(contractDir: string, contractName: string) {
-  const path = resolve(CONTRACTS_OUT, contractDir, `${contractName}.json`);
-  const raw = JSON.parse(readFileSync(path, "utf8"));
+  // Try flat layout first (./artifacts/ContractName.json), then Foundry layout (dir/ContractName.json)
+  let artifactPath = resolve(CONTRACTS_OUT, `${contractName}.json`);
+  try { readFileSync(artifactPath); } catch { artifactPath = resolve(CONTRACTS_OUT, contractDir, `${contractName}.json`); }
+  const raw = JSON.parse(readFileSync(artifactPath, "utf8"));
   return {
     abi: raw.abi,
     bytecode: raw.bytecode.object as `0x${string}`,
@@ -215,8 +217,6 @@ MPC_PK_Y=${BABYJUBJUB_BASE.y.toString()}
 # Mock MPC service
 MPC_BALANCE_CHECK_URL=http://localhost:4023
 
-# Forge artifacts path
-CONTRACTS_OUT_DIR=${process.env.CONTRACTS_OUT_DIR || "../../../../private_deposit/contracts/out"}
 `;
 
   const envPath = resolve(__dirname, ".env.sepolia");

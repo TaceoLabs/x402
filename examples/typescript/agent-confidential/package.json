@@ -3,8 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "generate-wallets": "tsx generate-wallets.ts",
     "deploy": "tsx deploy.ts",
-    "deploy:sepolia": "tsx deploy-sepolia.ts",
+    "deploy:sepolia": "dotenv -e .env.sepolia -- tsx deploy-sepolia.ts",
     "facilitator": "tsx facilitator.ts",
     "facilitator:sepolia": "dotenv -e .env.sepolia -- tsx facilitator.ts",
     "server": "tsx server.ts",

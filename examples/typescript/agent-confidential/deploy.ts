@@ -41,10 +41,10 @@ const AGENT_KEY = (process.env.AGENT_PRIVATE_KEY ||
 const SERVER_KEY = (process.env.SERVER_PRIVATE_KEY ||
   "0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a") as `0x${string}`;
 
-// Path to forge artifacts
+// Path to contract artifacts — uses local ./artifacts/ by default (committed to repo)
 const CONTRACTS_OUT = resolve(
   __dirname,
-  process.env.CONTRACTS_OUT_DIR || "../../../../../private_deposit/contracts/out",
+  process.env.CONTRACTS_OUT_DIR || "./artifacts",
 );
 
 // BabyJubJub base point (a valid point on the curve — used as mock MPC public keys)
@@ -63,8 +63,10 @@ const anvil = defineChain({
 });
 
 function loadArtifact(contractDir: string, contractName: string) {
-  const path = resolve(CONTRACTS_OUT, contractDir, `${contractName}.json`);
-  const raw = JSON.parse(readFileSync(path, "utf8"));
+  // Try flat layout first (./artifacts/ContractName.json), then Foundry layout (dir/ContractName.json)
+  let artifactPath = resolve(CONTRACTS_OUT, `${contractName}.json`);
+  try { readFileSync(artifactPath); } catch { artifactPath = resolve(CONTRACTS_OUT, contractDir, `${contractName}.json`); }
+  const raw = JSON.parse(readFileSync(artifactPath, "utf8"));
   return {
     abi: raw.abi,
     bytecode: raw.bytecode.object as `0x${string}`,
