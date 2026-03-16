@@ -145,7 +145,20 @@ curl -X POST http://localhost:4020/api/pay \
 
 ## Quick Start (Existing Deployment)
 
-If you already have `.env.sepolia` with deployed contract addresses (e.g. shared by a teammate), skip steps 2-4 and go straight to starting services:
+If you already have `.env.sepolia` with deployed contract addresses (e.g. shared by a teammate), skip steps 2-4:
+
+```bash
+# One command — starts all 4 services in the background
+./start.sh
+
+# Or with a USDC deposit (if agent has no balance yet)
+./start.sh --deposit
+
+# Stop everything
+./start.sh --stop
+```
+
+**Manual start** (if you prefer separate terminals):
 
 ```bash
 pnpm run mock-mpc          # Terminal 1 — must start first

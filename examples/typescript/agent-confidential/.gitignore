@@ -2,4 +2,5 @@
 .env.sepolia
 .env-local
 .mpc-balances.json
+.demo-pids
 node_modules/
