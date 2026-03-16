@@ -15,6 +15,9 @@ import { config } from "dotenv";
 config();
 
 import express from "express";
+import { existsSync, readFileSync, writeFileSync } from "fs";
+import { resolve, dirname } from "path";
+import { fileURLToPath } from "url";
 import {
   createPublicClient,
   createWalletClient,
@@ -165,16 +168,51 @@ interface BalanceEntry {
 
 const balances = new Map<string, BalanceEntry>();
 
-// No hardcoded balances — real USDC deposits via deposit-sepolia.ts create Deposit
-// actions in the queue, which this service processes to build balance commitments.
-console.log(`[MPC] Starting with empty balance map — balances populated via on-chain deposits`);
+// ── Persistence ───────────────────────────────────────────────────────────────
 
-function getBalance(address: string): BalanceEntry {
-  return balances.get(address.toLowerCase()) || { balance: BigInt(0), randomness: BigInt(0) };
+const __mpc_dirname = dirname(fileURLToPath(import.meta.url));
+const BALANCE_FILE = resolve(__mpc_dirname, ".mpc-balances.json");
+
+interface PersistedState {
+  randomnessCounter: string;
+  balances: Record<string, { balance: string; randomness: string }>;
 }
 
-function setBalance(address: string, entry: BalanceEntry) {
-  balances.set(address.toLowerCase(), entry);
+function saveBalances() {
+  const state: PersistedState = {
+    randomnessCounter: randomnessCounter.toString(),
+    balances: {},
+  };
+  for (const [addr, entry] of balances) {
+    state.balances[addr] = {
+      balance: entry.balance.toString(),
+      randomness: entry.randomness.toString(),
+    };
+  }
+  writeFileSync(BALANCE_FILE, JSON.stringify(state, null, 2));
+}
+
+function loadBalances() {
+  if (!existsSync(BALANCE_FILE)) {
+    console.log(`[MPC] No saved state found — starting fresh`);
+    return;
+  }
+  try {
+    const state: PersistedState = JSON.parse(readFileSync(BALANCE_FILE, "utf8"));
+    randomnessCounter = BigInt(state.randomnessCounter);
+    for (const [addr, entry] of Object.entries(state.balances)) {
+      balances.set(addr, {
+        balance: BigInt(entry.balance),
+        randomness: BigInt(entry.randomness),
+      });
+    }
+    console.log(`[MPC] Restored ${balances.size} balance(s) from ${BALANCE_FILE}`);
+    for (const [addr, entry] of balances) {
+      console.log(`[MPC]   ${addr}: ${(Number(entry.balance) / 1e6).toFixed(6)} USDC`);
+    }
+  } catch (err) {
+    console.warn(`[MPC] Failed to load saved state, starting fresh:`, err instanceof Error ? err.message : err);
+  }
 }
 
 // Simple randomness generator (deterministic for reproducibility)
@@ -182,6 +220,17 @@ let randomnessCounter = BigInt(99999999);
 function nextRandomness(): bigint {
   randomnessCounter += BigInt(1);
   return randomnessCounter % BN254_PRIME;
+}
+
+loadBalances();
+
+function getBalance(address: string): BalanceEntry {
+  return balances.get(address.toLowerCase()) || { balance: BigInt(0), randomness: BigInt(0) };
+}
+
+function setBalance(address: string, entry: BalanceEntry) {
+  balances.set(address.toLowerCase(), entry);
+  saveBalances();
 }
 
 // ── Express Server ─────────────────────────────────────────────────────────────

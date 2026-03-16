@@ -1,4 +1,5 @@
 .env
 .env.sepolia
 .env-local
+.mpc-balances.json
 node_modules/

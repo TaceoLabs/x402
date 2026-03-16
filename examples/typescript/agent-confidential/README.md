@@ -36,11 +36,17 @@ No Foundry required — contract artifacts are committed in the `artifacts/` dir
 ### 1. Clone and install
 
 ```bash
-git clone https://github.com/TaceoLabs/x402.git
+git clone -b feat/standalone-demo https://github.com/TaceoLabs/x402.git
 cd x402/examples/typescript
 pnpm install
 
-cd agent-confidential
+# Build the @x402 workspace packages (required — they're unpublished TypeScript)
+cd ../..
+pnpm --filter @x402/core build && pnpm --filter @x402/extensions build && \
+pnpm --filter @x402/evm build && pnpm --filter @x402/axios build && \
+pnpm --filter @x402/express build
+
+cd examples/typescript/agent-confidential
 pnpm run frontend:install
 pnpm run frontend:build
 ```
@@ -212,3 +218,5 @@ Pre-compiled contract artifacts are in `artifacts/`. If you need to rebuild them
 **Deploy fails with "MPC wallet needs at least 0.01 ETH"** — Fund the MPC wallet address (shown in `.env.sepolia` as `MPC_ADDRESS`) with Base Sepolia ETH from a faucet.
 
 **Dashboard shows stale data** — Hard refresh the browser. If the frontend was rebuilt, restart the dashboard service.
+
+**MPC balance persistence** — The mock MPC saves balances to `.mpc-balances.json` so they survive restarts. Delete this file to reset to a clean state (you'll need to re-deposit).
