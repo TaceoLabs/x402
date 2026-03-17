@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "setup": "cd .. && pnpm --filter @x402/core --filter @x402/extensions --filter @x402/evm --filter @x402/axios --filter @x402/express build && cd - && pnpm run frontend:install && pnpm run frontend:build",
     "generate-wallets": "tsx generate-wallets.ts",
     "deploy": "tsx deploy.ts",
     "deploy:sepolia": "dotenv -e .env.sepolia -- tsx deploy-sepolia.ts",

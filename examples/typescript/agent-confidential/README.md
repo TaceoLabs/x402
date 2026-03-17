@@ -40,15 +40,8 @@ git clone -b feat/standalone-demo https://github.com/TaceoLabs/x402.git
 cd x402/examples/typescript
 pnpm install
 
-# Build the @x402 workspace packages (required — they're unpublished TypeScript)
-cd ../..
-pnpm --filter @x402/core build && pnpm --filter @x402/extensions build && \
-pnpm --filter @x402/evm build && pnpm --filter @x402/axios build && \
-pnpm --filter @x402/express build
-
-cd examples/typescript/agent-confidential
-pnpm run frontend:install
-pnpm run frontend:build
+cd agent-confidential
+pnpm run setup    # builds @x402 workspace packages + frontend
 
 # Drop in the two files from your teammate
 # cp /path/to/.env.sepolia .
@@ -70,15 +63,8 @@ git clone -b feat/standalone-demo https://github.com/TaceoLabs/x402.git
 cd x402/examples/typescript
 pnpm install
 
-# Build the @x402 workspace packages (required — they're unpublished TypeScript)
-cd ../..
-pnpm --filter @x402/core build && pnpm --filter @x402/extensions build && \
-pnpm --filter @x402/evm build && pnpm --filter @x402/axios build && \
-pnpm --filter @x402/express build
-
-cd examples/typescript/agent-confidential
-pnpm run frontend:install
-pnpm run frontend:build
+cd agent-confidential
+pnpm run setup    # builds @x402 workspace packages + frontend
 ```
 
 ### 2. Generate wallets
