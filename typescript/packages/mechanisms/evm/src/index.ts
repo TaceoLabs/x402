@@ -50,5 +50,6 @@ export type {
   ConfidentialCiphertext,
   BabyJubJubPoint,
   ConfidentialAuthorization,
+  Groth16Proof,
 } from "./confidential/types";
 export { isConfidentialPayload } from "./confidential/types";

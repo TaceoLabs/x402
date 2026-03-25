@@ -70,6 +70,15 @@ export const privateBalanceABI = [
       { name: "nonce", type: "uint256" },
       { name: "deadline", type: "uint256" },
       { name: "signature", type: "bytes" },
+      {
+        name: "clientProof",
+        type: "tuple",
+        components: [
+          { name: "pA", type: "uint256[2]" },
+          { name: "pB", type: "uint256[2][2]" },
+          { name: "pC", type: "uint256[2]" },
+        ],
+      },
     ],
     outputs: [{ name: "", type: "uint256" }],
     stateMutability: "nonpayable",

@@ -148,6 +148,17 @@ async function main() {
   const verifierAddress = verifierReceipt.contractAddress!;
   console.log(`[Deploy] MockVerifier deployed at ${verifierAddress}\n`);
 
+  // 2b. Deploy MockClientVerifier (always-true for client ZK proof)
+  console.log("[Deploy] Deploying MockClientVerifier...");
+  const clientVerifier = loadArtifact("MockClientVerifier.sol", "MockClientVerifier");
+  const clientVerifierHash = await walletClient.deployContract({
+    abi: clientVerifier.abi,
+    bytecode: clientVerifier.bytecode,
+  });
+  const clientVerifierReceipt = await publicClient.waitForTransactionReceipt({ hash: clientVerifierHash });
+  const clientVerifierAddress = clientVerifierReceipt.contractAddress!;
+  console.log(`[Deploy] MockClientVerifier deployed at ${clientVerifierAddress}\n`);
+
   // 3. Deploy QueryMapLib
   console.log("[Deploy] Deploying QueryMapLib...");
   const queryMapLib = loadArtifact("action_queue.sol", "QueryMapLib");
@@ -172,6 +183,7 @@ async function main() {
     bytecode: linkedBytecode,
     args: [
       verifierAddress,                // _verifierAddress (MockVerifier)
+      clientVerifierAddress,          // _clientVerifierAddress (MockClientVerifier)
       poseidonAddress,                // _poseidon2Address
       mpcAccount.address,             // _mpcAddress (MPC operator)
       USDC_ADDRESS,                   // _usdcAddress (real USDC on Base Sepolia)
@@ -202,6 +214,7 @@ RPC_URL=${RPC_URL}
 USDC_ADDRESS=${USDC_ADDRESS}
 POSEIDON2_ADDRESS=${poseidonAddress}
 VERIFIER_ADDRESS=${verifierAddress}
+CLIENT_VERIFIER_ADDRESS=${clientVerifierAddress}
 PRIVATE_BALANCE_ADDRESS=${privBalanceAddress}
 
 # Derived addresses
@@ -231,6 +244,7 @@ MPC_BALANCE_CHECK_URL=http://localhost:4023
   console.log(`  USDC (real):     ${USDC_ADDRESS}`);
   console.log(`  Poseidon2:       ${poseidonAddress}`);
   console.log(`  MockVerifier:    ${verifierAddress}`);
+  console.log(`  MockClientVerifier: ${clientVerifierAddress}`);
   console.log(`  PrivateBalance:  ${privBalanceAddress}`);
   console.log("");
   console.log(`  MPC Operator:    ${mpcAccount.address}`);

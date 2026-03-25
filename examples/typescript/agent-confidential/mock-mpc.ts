@@ -247,6 +247,26 @@ app.use((_req, res, next) => {
   next();
 });
 
+// ── Transfer Hints (side-channel from facilitator) ─────────────────────────
+
+interface TransferHint {
+  sender: string;
+  receiver: string;
+  amount: bigint;
+}
+
+const transferHints: TransferHint[] = [];
+
+app.post("/transfer-hint", (req, res) => {
+  const { sender, receiver, amount } = req.body;
+  if (!sender || !receiver || amount === undefined) {
+    return res.status(400).json({ error: "Missing sender, receiver, or amount" });
+  }
+  transferHints.push({ sender: sender.toLowerCase(), receiver: receiver.toLowerCase(), amount: BigInt(amount) });
+  console.log(`[MPC] Transfer hint received: ${sender} → ${receiver}, ${Number(BigInt(amount)) / 1e6} USDC (${transferHints.length} pending)`);
+  return res.json({ ok: true });
+});
+
 app.post("/balance-check", (req, res) => {
   const { sender, amount } = req.body;
   if (!sender || amount === undefined) {
@@ -334,17 +354,21 @@ async function pollAndProcess() {
       );
 
       if (action.action === Action.Transfer) {
-        // Recover plaintext amount from ciphertext shares
-        const ct = ciphertexts[i] as {
-          amount: [bigint, bigint, bigint];
-          r: [bigint, bigint, bigint];
-          sender_pk: { x: bigint; y: bigint };
-        };
-
-        const plaintextAmount = (ct.amount[0] + ct.amount[1] + ct.amount[2]) % BN254_PRIME;
-        const plaintextRandomness = (ct.r[0] + ct.r[1] + ct.r[2]) % BN254_PRIME;
-
-        console.log(`[MPC]   Transfer: ${Number(plaintextAmount) / 1e6} USDC (recovered from shares)`);
+        // Look up plaintext amount from facilitator's side-channel hint
+        const hintIdx = transferHints.findIndex(
+          (h) => h.sender === action.sender.toLowerCase() && h.receiver === action.receiver.toLowerCase(),
+        );
+        let plaintextAmount: bigint;
+        if (hintIdx >= 0) {
+          plaintextAmount = transferHints[hintIdx].amount;
+          transferHints.splice(hintIdx, 1);
+          console.log(`[MPC]   Transfer: ${Number(plaintextAmount) / 1e6} USDC (from facilitator hint)`);
+        } else {
+          // Fallback: try summing ciphertext shares (works only with plaintext shares, not encrypted)
+          const ct = ciphertexts[i] as { amount: [bigint, bigint, bigint]; r: [bigint, bigint, bigint] };
+          plaintextAmount = (ct.amount[0] + ct.amount[1] + ct.amount[2]) % BN254_PRIME;
+          console.log(`[MPC]   Transfer: ${Number(plaintextAmount) / 1e6} USDC (from ciphertext sum — may be incorrect if encrypted)`);
+        }
 
         // Update balances
         const senderEntry = getBalance(action.sender);
@@ -451,10 +475,7 @@ async function pollAndProcess() {
     );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    // Don't spam logs for empty queue or transient RPC errors
-    if (!msg.includes("reverted") && !msg.includes("timeout")) {
-      console.error(`[MPC] Poll error: ${msg}`);
-    }
+    console.error(`[MPC] Poll error: ${msg.slice(0, 500)}`);
   } finally {
     processing = false;
   }

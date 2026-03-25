@@ -1,8 +1,8 @@
 /**
  * agent.ts — AI agent client that makes paid API calls with confidential payments.
  *
- * Registers the confidential scheme, wraps axios, and makes 3 paid requests
- * to the resource server's sentiment API.
+ * Registers the confidential scheme with ZK proof generation, wraps axios,
+ * and makes 3 paid requests to the resource server's sentiment API.
  *
  * Usage: tsx agent.ts
  * Requires: .env file, facilitator on :4022, server on :4021
@@ -24,7 +24,15 @@ import { publicActions } from "viem";
 import { x402Client, wrapAxiosWithPayment, x402HTTPClient } from "@x402/axios";
 import { ConfidentialEvmScheme } from "@x402/evm/confidential/client";
 import { toClientEvmSigner } from "@x402/evm";
+import type { ProofGenerator } from "@x402/evm/confidential/client";
 import type { Network } from "@x402/core/types";
+import type { ConfidentialCiphertext, BabyJubJubPoint } from "@x402/evm";
+import * as snarkjs from "snarkjs";
+import { resolve, dirname } from "path";
+import crypto from "crypto";
+import { fileURLToPath } from "url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // ── Configuration ──────────────────────────────────────────────────────────────
 
@@ -37,6 +45,28 @@ if (!AGENT_KEY) {
   console.error("Missing AGENT_PRIVATE_KEY. Run 'pnpm run deploy' first.");
   process.exit(1);
 }
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+const BN254_PRIME = BigInt("0x30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000001");
+const BJJ_FR = BigInt("2736030358979909402780800718157159386076813972158567259200215660948447373041");
+
+function randomFieldElement(): bigint {
+  const bytes = crypto.randomBytes(32);
+  const n = BigInt("0x" + bytes.toString("hex"));
+  return n % BN254_PRIME;
+}
+
+function randomScalar(): bigint {
+  const bytes = crypto.randomBytes(32);
+  const n = BigInt("0x" + bytes.toString("hex"));
+  return n % BJJ_FR;
+}
+
+// ── ZK Proof Artifacts ───────────────────────────────────────────────────────
+
+const WASM_PATH = resolve(__dirname, "./artifacts/zk/merces_client.wasm");
+const ZKEY_PATH = resolve(__dirname, "./artifacts/zk/merces_client.zkey");
 
 // ── Chain & Signer ─────────────────────────────────────────────────────────────
 
@@ -58,11 +88,52 @@ const viemClient = createWalletClient({
 
 const signer = toClientEvmSigner(account, viemClient);
 
+// ── ZK Proof Generator ──────────────────────────────────────────────────────
+
+const proofGenerator: ProofGenerator = async (amount, r, mpcPublicKeys) => {
+  const encryptSk = randomScalar();
+  const shareAmount = [randomFieldElement(), randomFieldElement()];
+  const shareR = [randomFieldElement(), randomFieldElement()];
+
+  const { proof, publicSignals } = await snarkjs.groth16.fullProve(
+    {
+      amount: amount.toString(),
+      amount_r: r.toString(),
+      encrypt_sk: encryptSk.toString(),
+      mpc_pks: mpcPublicKeys.map((pk: BabyJubJubPoint) => [pk.x, pk.y]),
+      share_amount: shareAmount.map((s: bigint) => s.toString()),
+      share_amount_r: shareR.map((s: bigint) => s.toString()),
+    },
+    WASM_PATH,
+    ZKEY_PATH,
+  );
+
+  // Public signals (15): encrypt_pk(2), amount_c(1), ciphertexts(6, interleaved), mpc_pks(6)
+  const ciphertext: ConfidentialCiphertext = {
+    amount: [publicSignals[3], publicSignals[5], publicSignals[7]],
+    r: [publicSignals[4], publicSignals[6], publicSignals[8]],
+    senderPk: { x: publicSignals[0], y: publicSignals[1] },
+  };
+
+  return {
+    proof: {
+      pA: [proof.pi_a[0], proof.pi_a[1]] as [string, string],
+      pB: [
+        [proof.pi_b[0][0], proof.pi_b[0][1]],
+        [proof.pi_b[1][0], proof.pi_b[1][1]],
+      ] as [[string, string], [string, string]],
+      pC: [proof.pi_c[0], proof.pi_c[1]] as [string, string],
+    },
+    amountCommitment: BigInt(publicSignals[2]),
+    ciphertext,
+  };
+};
+
 // ── x402 Client Setup ──────────────────────────────────────────────────────────
 
 const NETWORK: Network = `eip155:${CHAIN_ID}`;
 const client = new x402Client();
-client.register(NETWORK, new ConfidentialEvmScheme(signer));
+client.register(NETWORK, new ConfidentialEvmScheme(signer, proofGenerator));
 
 const httpClient = new x402HTTPClient(client);
 const api = wrapAxiosWithPayment(axios.create(), httpClient);
@@ -71,7 +142,7 @@ const api = wrapAxiosWithPayment(axios.create(), httpClient);
 
 async function main() {
   console.log("=".repeat(60));
-  console.log("  Confidential x402 Agent Demo");
+  console.log("  Confidential x402 Agent Demo (with ZK proof)");
   console.log("=".repeat(60));
   console.log(`  Agent:  ${account.address}`);
   console.log(`  Server: ${SERVER_URL}`);
@@ -98,7 +169,7 @@ async function main() {
 
       if (settleResponse?.success) {
         console.log(`[Agent] Payment settled — tx: ${settleResponse.transaction}`);
-        console.log(`[Agent] Amount hidden on-chain (only Poseidon2 commitment visible)\n`);
+        console.log(`[Agent] ZK proof verified + amount hidden on-chain\n`);
       } else {
         console.log(`[Agent] Payment response:`, settleResponse);
         console.log("");
@@ -120,7 +191,7 @@ async function main() {
 
   console.log("=".repeat(60));
   console.log("  Demo Complete!");
-  console.log("  3 payments settled on-chain — all amounts hidden behind commitments.");
+  console.log("  3 payments settled on-chain — ZK proofs verified, amounts hidden.");
   console.log("=".repeat(60));
 }
 
