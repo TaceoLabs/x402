@@ -15,6 +15,9 @@ import { config } from "dotenv";
 config();
 
 import express from "express";
+import { existsSync, readFileSync, writeFileSync } from "fs";
+import { resolve, dirname } from "path";
+import { fileURLToPath } from "url";
 import {
   createPublicClient,
   createWalletClient,
@@ -165,16 +168,51 @@ interface BalanceEntry {
 
 const balances = new Map<string, BalanceEntry>();
 
-// No hardcoded balances — real USDC deposits via deposit-sepolia.ts create Deposit
-// actions in the queue, which this service processes to build balance commitments.
-console.log(`[MPC] Starting with empty balance map — balances populated via on-chain deposits`);
+// ── Persistence ───────────────────────────────────────────────────────────────
 
-function getBalance(address: string): BalanceEntry {
-  return balances.get(address.toLowerCase()) || { balance: BigInt(0), randomness: BigInt(0) };
+const __mpc_dirname = dirname(fileURLToPath(import.meta.url));
+const BALANCE_FILE = resolve(__mpc_dirname, ".mpc-balances.json");
+
+interface PersistedState {
+  randomnessCounter: string;
+  balances: Record<string, { balance: string; randomness: string }>;
 }
 
-function setBalance(address: string, entry: BalanceEntry) {
-  balances.set(address.toLowerCase(), entry);
+function saveBalances() {
+  const state: PersistedState = {
+    randomnessCounter: randomnessCounter.toString(),
+    balances: {},
+  };
+  for (const [addr, entry] of balances) {
+    state.balances[addr] = {
+      balance: entry.balance.toString(),
+      randomness: entry.randomness.toString(),
+    };
+  }
+  writeFileSync(BALANCE_FILE, JSON.stringify(state, null, 2));
+}
+
+function loadBalances() {
+  if (!existsSync(BALANCE_FILE)) {
+    console.log(`[MPC] No saved state found — starting fresh`);
+    return;
+  }
+  try {
+    const state: PersistedState = JSON.parse(readFileSync(BALANCE_FILE, "utf8"));
+    randomnessCounter = BigInt(state.randomnessCounter);
+    for (const [addr, entry] of Object.entries(state.balances)) {
+      balances.set(addr, {
+        balance: BigInt(entry.balance),
+        randomness: BigInt(entry.randomness),
+      });
+    }
+    console.log(`[MPC] Restored ${balances.size} balance(s) from ${BALANCE_FILE}`);
+    for (const [addr, entry] of balances) {
+      console.log(`[MPC]   ${addr}: ${(Number(entry.balance) / 1e6).toFixed(6)} USDC`);
+    }
+  } catch (err) {
+    console.warn(`[MPC] Failed to load saved state, starting fresh:`, err instanceof Error ? err.message : err);
+  }
 }
 
 // Simple randomness generator (deterministic for reproducibility)
@@ -182,6 +220,17 @@ let randomnessCounter = BigInt(99999999);
 function nextRandomness(): bigint {
   randomnessCounter += BigInt(1);
   return randomnessCounter % BN254_PRIME;
+}
+
+loadBalances();
+
+function getBalance(address: string): BalanceEntry {
+  return balances.get(address.toLowerCase()) || { balance: BigInt(0), randomness: BigInt(0) };
+}
+
+function setBalance(address: string, entry: BalanceEntry) {
+  balances.set(address.toLowerCase(), entry);
+  saveBalances();
 }
 
 // ── Express Server ─────────────────────────────────────────────────────────────
@@ -196,6 +245,26 @@ app.use((_req, res, next) => {
   res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   if (_req.method === "OPTIONS") return res.sendStatus(204);
   next();
+});
+
+// ── Transfer Hints (side-channel from facilitator) ─────────────────────────
+
+interface TransferHint {
+  sender: string;
+  receiver: string;
+  amount: bigint;
+}
+
+const transferHints: TransferHint[] = [];
+
+app.post("/transfer-hint", (req, res) => {
+  const { sender, receiver, amount } = req.body;
+  if (!sender || !receiver || amount === undefined) {
+    return res.status(400).json({ error: "Missing sender, receiver, or amount" });
+  }
+  transferHints.push({ sender: sender.toLowerCase(), receiver: receiver.toLowerCase(), amount: BigInt(amount) });
+  console.log(`[MPC] Transfer hint received: ${sender} → ${receiver}, ${Number(BigInt(amount)) / 1e6} USDC (${transferHints.length} pending)`);
+  return res.json({ ok: true });
 });
 
 app.post("/balance-check", (req, res) => {
@@ -285,17 +354,21 @@ async function pollAndProcess() {
       );
 
       if (action.action === Action.Transfer) {
-        // Recover plaintext amount from ciphertext shares
-        const ct = ciphertexts[i] as {
-          amount: [bigint, bigint, bigint];
-          r: [bigint, bigint, bigint];
-          sender_pk: { x: bigint; y: bigint };
-        };
-
-        const plaintextAmount = (ct.amount[0] + ct.amount[1] + ct.amount[2]) % BN254_PRIME;
-        const plaintextRandomness = (ct.r[0] + ct.r[1] + ct.r[2]) % BN254_PRIME;
-
-        console.log(`[MPC]   Transfer: ${Number(plaintextAmount) / 1e6} USDC (recovered from shares)`);
+        // Look up plaintext amount from facilitator's side-channel hint
+        const hintIdx = transferHints.findIndex(
+          (h) => h.sender === action.sender.toLowerCase() && h.receiver === action.receiver.toLowerCase(),
+        );
+        let plaintextAmount: bigint;
+        if (hintIdx >= 0) {
+          plaintextAmount = transferHints[hintIdx].amount;
+          transferHints.splice(hintIdx, 1);
+          console.log(`[MPC]   Transfer: ${Number(plaintextAmount) / 1e6} USDC (from facilitator hint)`);
+        } else {
+          // Fallback: try summing ciphertext shares (works only with plaintext shares, not encrypted)
+          const ct = ciphertexts[i] as { amount: [bigint, bigint, bigint]; r: [bigint, bigint, bigint] };
+          plaintextAmount = (ct.amount[0] + ct.amount[1] + ct.amount[2]) % BN254_PRIME;
+          console.log(`[MPC]   Transfer: ${Number(plaintextAmount) / 1e6} USDC (from ciphertext sum — may be incorrect if encrypted)`);
+        }
 
         // Update balances
         const senderEntry = getBalance(action.sender);
@@ -402,10 +475,7 @@ async function pollAndProcess() {
     );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    // Don't spam logs for empty queue or transient RPC errors
-    if (!msg.includes("reverted") && !msg.includes("timeout")) {
-      console.error(`[MPC] Poll error: ${msg}`);
-    }
+    console.error(`[MPC] Poll error: ${msg.slice(0, 500)}`);
   } finally {
     processing = false;
   }

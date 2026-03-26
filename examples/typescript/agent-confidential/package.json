@@ -3,8 +3,10 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "setup": "cd .. && pnpm --filter @x402/core --filter @x402/extensions --filter @x402/evm --filter @x402/axios --filter @x402/express build && cd - && pnpm run frontend:install && pnpm run frontend:build",
+    "generate-wallets": "tsx generate-wallets.ts",
     "deploy": "tsx deploy.ts",
-    "deploy:sepolia": "tsx deploy-sepolia.ts",
+    "deploy:sepolia": "dotenv -e .env.sepolia -- tsx deploy-sepolia.ts",
     "facilitator": "tsx facilitator.ts",
     "facilitator:sepolia": "dotenv -e .env.sepolia -- tsx facilitator.ts",
     "server": "tsx server.ts",
@@ -26,6 +28,7 @@
     "@x402/express": "workspace:*",
     "axios": "^1.13.2",
     "dotenv": "^16.4.7",
+    "snarkjs": "^0.7.5",
     "express": "^4.18.2",
     "viem": "^2.39.0"
   },

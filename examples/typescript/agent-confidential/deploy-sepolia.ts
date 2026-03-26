@@ -49,10 +49,10 @@ if (!MPC_KEY || !FACILITATOR_KEY || !AGENT_KEY || !SERVER_KEY) {
   process.exit(1);
 }
 
-// Path to forge artifacts
+// Path to contract artifacts — uses local ./artifacts/ by default (committed to repo)
 const CONTRACTS_OUT = resolve(
   __dirname,
-  process.env.CONTRACTS_OUT_DIR || "../../../../../private_deposit/contracts/out",
+  process.env.CONTRACTS_OUT_DIR || "./artifacts",
 );
 
 // BabyJubJub base point (a valid point on the curve — used as mock MPC public keys)
@@ -69,8 +69,10 @@ const chain = defineChain({
 });
 
 function loadArtifact(contractDir: string, contractName: string) {
-  const path = resolve(CONTRACTS_OUT, contractDir, `${contractName}.json`);
-  const raw = JSON.parse(readFileSync(path, "utf8"));
+  // Try flat layout first (./artifacts/ContractName.json), then Foundry layout (dir/ContractName.json)
+  let artifactPath = resolve(CONTRACTS_OUT, `${contractName}.json`);
+  try { readFileSync(artifactPath); } catch { artifactPath = resolve(CONTRACTS_OUT, contractDir, `${contractName}.json`); }
+  const raw = JSON.parse(readFileSync(artifactPath, "utf8"));
   return {
     abi: raw.abi,
     bytecode: raw.bytecode.object as `0x${string}`,
@@ -146,6 +148,17 @@ async function main() {
   const verifierAddress = verifierReceipt.contractAddress!;
   console.log(`[Deploy] MockVerifier deployed at ${verifierAddress}\n`);
 
+  // 2b. Deploy ClientTransferVerifier (real on-chain ZK proof verification)
+  console.log("[Deploy] Deploying ClientTransferVerifier...");
+  const clientVerifier = loadArtifact("ClientTransferVerifier.sol", "ClientTransferVerifier");
+  const clientVerifierHash = await walletClient.deployContract({
+    abi: clientVerifier.abi,
+    bytecode: clientVerifier.bytecode,
+  });
+  const clientVerifierReceipt = await publicClient.waitForTransactionReceipt({ hash: clientVerifierHash });
+  const clientVerifierAddress = clientVerifierReceipt.contractAddress!;
+  console.log(`[Deploy] ClientTransferVerifier deployed at ${clientVerifierAddress}\n`);
+
   // 3. Deploy QueryMapLib
   console.log("[Deploy] Deploying QueryMapLib...");
   const queryMapLib = loadArtifact("action_queue.sol", "QueryMapLib");
@@ -170,6 +183,7 @@ async function main() {
     bytecode: linkedBytecode,
     args: [
       verifierAddress,                // _verifierAddress (MockVerifier)
+      clientVerifierAddress,          // _clientVerifierAddress (MockClientVerifier)
       poseidonAddress,                // _poseidon2Address
       mpcAccount.address,             // _mpcAddress (MPC operator)
       USDC_ADDRESS,                   // _usdcAddress (real USDC on Base Sepolia)
@@ -200,6 +214,7 @@ RPC_URL=${RPC_URL}
 USDC_ADDRESS=${USDC_ADDRESS}
 POSEIDON2_ADDRESS=${poseidonAddress}
 VERIFIER_ADDRESS=${verifierAddress}
+CLIENT_VERIFIER_ADDRESS=${clientVerifierAddress}
 PRIVATE_BALANCE_ADDRESS=${privBalanceAddress}
 
 # Derived addresses
@@ -215,8 +230,6 @@ MPC_PK_Y=${BABYJUBJUB_BASE.y.toString()}
 # Mock MPC service
 MPC_BALANCE_CHECK_URL=http://localhost:4023
 
-# Forge artifacts path
-CONTRACTS_OUT_DIR=${process.env.CONTRACTS_OUT_DIR || "../../../../private_deposit/contracts/out"}
 `;
 
   const envPath = resolve(__dirname, ".env.sepolia");
@@ -231,6 +244,7 @@ CONTRACTS_OUT_DIR=${process.env.CONTRACTS_OUT_DIR || "../../../../private_deposi
   console.log(`  USDC (real):     ${USDC_ADDRESS}`);
   console.log(`  Poseidon2:       ${poseidonAddress}`);
   console.log(`  MockVerifier:    ${verifierAddress}`);
+  console.log(`  ClientTransferVerifier: ${clientVerifierAddress}`);
   console.log(`  PrivateBalance:  ${privBalanceAddress}`);
   console.log("");
   console.log(`  MPC Operator:    ${mpcAccount.address}`);

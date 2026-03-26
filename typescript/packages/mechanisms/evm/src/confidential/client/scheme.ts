@@ -5,7 +5,7 @@ import {
   PaymentPayloadContext,
 } from "@x402/core/types";
 import { ClientEvmSigner } from "../../signer";
-import { createTransferFromPayload } from "./transferFrom";
+import { createTransferFromPayload, ProofGenerator } from "./transferFrom";
 
 /**
  * EVM client implementation for the Confidential payment scheme.
@@ -16,13 +16,16 @@ import { createTransferFromPayload } from "./transferFrom";
 export class ConfidentialEvmScheme implements SchemeNetworkClient {
   readonly scheme = "confidential";
 
-  constructor(private readonly signer: ClientEvmSigner) {}
+  constructor(
+    private readonly signer: ClientEvmSigner,
+    private readonly proofGenerator?: ProofGenerator,
+  ) {}
 
   async createPaymentPayload(
     x402Version: number,
     paymentRequirements: PaymentRequirements,
     _context?: PaymentPayloadContext,
   ): Promise<PaymentPayloadResult> {
-    return createTransferFromPayload(this.signer, x402Version, paymentRequirements);
+    return createTransferFromPayload(this.signer, x402Version, paymentRequirements, this.proofGenerator);
   }
 }

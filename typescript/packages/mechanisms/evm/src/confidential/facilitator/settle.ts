@@ -7,12 +7,12 @@ import { getAddress } from "viem";
 import { FacilitatorEvmSigner } from "../../signer";
 import { ConfidentialEvmPayload, ConfidentialExtra } from "../types";
 import { privateBalanceABI } from "../constants";
-import { verifyConfidential } from "./verify";
+import { verifyConfidential, ProofVerifier } from "./verify";
 
 /**
  * Settle a confidential payment by calling transferFrom on-chain.
  *
- * 1. Re-verifies the payment (all 10 checks)
+ * 1. Re-verifies the payment (all 12 checks)
  * 2. Calls transferFrom() on the PrivateBalance contract
  * 3. Waits for transaction receipt
  * 4. Returns settlement response
@@ -23,6 +23,7 @@ export async function settleConfidential(
   requirements: PaymentRequirements,
   confidentialPayload: ConfidentialEvmPayload,
   extra: ConfidentialExtra,
+  proofVerifier?: ProofVerifier,
 ): Promise<SettleResponse> {
   const payer = confidentialPayload.authorization.sender;
 
@@ -33,6 +34,7 @@ export async function settleConfidential(
     requirements,
     confidentialPayload,
     extra,
+    proofVerifier,
   );
 
   if (!verifyResult.isValid) {
@@ -48,6 +50,13 @@ export async function settleConfidential(
   const confidentialToken = getAddress(extra.confidentialToken) as `0x${string}`;
   const auth = confidentialPayload.authorization;
   const ct = auth.ciphertext;
+
+  // Build client proof args (zero proof if not provided — contract uses MockClientVerifier)
+  const clientProof = confidentialPayload.clientProof ?? {
+    pA: ["0", "0"],
+    pB: [["0", "0"], ["0", "0"]],
+    pC: ["0", "0"],
+  };
 
   try {
     // 2. Call transferFrom() on-chain
@@ -70,6 +79,16 @@ export async function settleConfidential(
         BigInt(auth.nonce),
         BigInt(auth.deadline),
         confidentialPayload.signature,
+        {
+          pA: [BigInt(clientProof.pA[0]), BigInt(clientProof.pA[1])],
+          // Swap pB inner coordinates: snarkjs uses [real, imag] but the EVM
+          // pairing precompile (and snarkjs-generated Solidity verifiers) expect [imag, real].
+          pB: [
+            [BigInt(clientProof.pB[0][1]), BigInt(clientProof.pB[0][0])],
+            [BigInt(clientProof.pB[1][1]), BigInt(clientProof.pB[1][0])],
+          ],
+          pC: [BigInt(clientProof.pC[0]), BigInt(clientProof.pC[1])],
+        },
       ],
     });
 

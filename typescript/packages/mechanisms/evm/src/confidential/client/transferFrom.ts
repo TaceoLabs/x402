@@ -2,13 +2,27 @@ import { PaymentRequirements, PaymentPayloadResult } from "@x402/core/types";
 import { getAddress } from "viem";
 import { ClientEvmSigner } from "../../signer";
 import { transferFromTypes } from "../constants";
-import { ConfidentialEvmPayload, ConfidentialExtra } from "../types";
+import { ConfidentialEvmPayload, ConfidentialExtra, ConfidentialCiphertext, Groth16Proof, BabyJubJubPoint } from "../types";
 import { randomFieldElement, createCiphertext, hashCiphertext } from "../crypto";
+
+/**
+ * Callback type for generating a ZK proof of commitment + secret sharing + encryption.
+ * Returns the proof, commitment, and ciphertext (encrypted shares from circuit output).
+ */
+export type ProofGenerator = (
+  amount: bigint,
+  r: bigint,
+  mpcPublicKeys: [BabyJubJubPoint, BabyJubJubPoint, BabyJubJubPoint],
+) => Promise<{
+  proof: Groth16Proof;
+  amountCommitment: bigint;
+  ciphertext: ConfidentialCiphertext;
+}>;
 
 /**
  * Creates a confidential transferFrom payload with EIP-712 signature.
  *
- * 1. Generates random blinding factor and computes Poseidon2 commitment (via on-chain call)
+ * 1. Generates random blinding factor and computes Poseidon2 commitment (via on-chain call or ZK proof)
  * 2. Creates 3-of-3 secret shares of amount and randomness
  * 3. Signs EIP-712 TransferFrom authorization
  * 4. Returns the payload
@@ -17,6 +31,7 @@ export async function createTransferFromPayload(
   signer: ClientEvmSigner,
   x402Version: number,
   paymentRequirements: PaymentRequirements,
+  proofGenerator?: ProofGenerator,
 ): Promise<PaymentPayloadResult> {
   const extra = paymentRequirements.extra as unknown as ConfidentialExtra;
   if (!extra?.confidentialToken || !extra?.eip712Domain) {
@@ -33,27 +48,38 @@ export async function createTransferFromPayload(
   // 1. Generate random blinding factor
   const r = randomFieldElement();
 
-  // 2. Compute Poseidon2 commitment via on-chain commit() call
-  const amountCommitment = (await signer.readContract({
-    address: confidentialToken,
-    abi: [
-      {
-        type: "function",
-        name: "commit",
-        inputs: [
-          { name: "input", type: "uint256" },
-          { name: "randomness", type: "uint256" },
-        ],
-        outputs: [{ name: "", type: "uint256" }],
-        stateMutability: "view",
-      },
-    ],
-    functionName: "commit",
-    args: [amount, r],
-  })) as bigint;
+  let amountCommitment: bigint;
+  let ciphertext: ConfidentialCiphertext;
+  let clientProof: Groth16Proof | undefined;
 
-  // 3. Create ciphertext with secret shares
-  const ciphertext = createCiphertext(amount, r);
+  if (proofGenerator) {
+    // ZK proof path: circuit computes commitment + encrypted shares
+    const result = await proofGenerator(amount, r, extra.mpcPublicKeys);
+    amountCommitment = result.amountCommitment;
+    ciphertext = result.ciphertext;
+    clientProof = result.proof;
+  } else {
+    // Legacy path: on-chain commitment + plaintext shares
+    amountCommitment = (await signer.readContract({
+      address: confidentialToken,
+      abi: [
+        {
+          type: "function",
+          name: "commit",
+          inputs: [
+            { name: "input", type: "uint256" },
+            { name: "randomness", type: "uint256" },
+          ],
+          outputs: [{ name: "", type: "uint256" }],
+          stateMutability: "view",
+        },
+      ],
+      functionName: "commit",
+      args: [amount, r],
+    })) as bigint;
+
+    ciphertext = createCiphertext(amount, r);
+  }
 
   // 4. Generate random nonce and compute deadline
   const nonce = randomFieldElement();
@@ -98,6 +124,8 @@ export async function createTransferFromPayload(
       nonce: nonce.toString(),
       deadline: deadline.toString(),
     },
+    clientProof,
+    blindingFactor: r.toString(),
   };
 
   return {

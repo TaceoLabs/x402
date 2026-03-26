@@ -12,7 +12,7 @@ import {
   BabyJubJubPoint,
   isConfidentialPayload,
 } from "../types";
-import { verifyConfidential } from "./verify";
+import { verifyConfidential, ProofVerifier } from "./verify";
 import { settleConfidential } from "./settle";
 
 /**
@@ -27,12 +27,14 @@ export interface ConfidentialFacilitatorConfig {
   eip712Domain: { name: string; version: string };
   /** The 3 MPC party BabyJubJub public keys */
   mpcPublicKeys: [BabyJubJubPoint, BabyJubJubPoint, BabyJubJubPoint];
+  /** Optional off-chain ZK proof verifier */
+  proofVerifier?: ProofVerifier;
 }
 
 /**
  * EVM facilitator implementation for the Confidential payment scheme.
  *
- * Verifies confidential payment payloads (10-step verification) and settles
+ * Verifies confidential payment payloads (12-step verification) and settles
  * them by calling transferFrom() on the PrivateBalance contract.
  */
 export class ConfidentialEvmScheme implements SchemeNetworkFacilitator {
@@ -89,6 +91,7 @@ export class ConfidentialEvmScheme implements SchemeNetworkFacilitator {
       requirements,
       confidentialPayload,
       this.extra,
+      this.config.proofVerifier,
     );
   }
 
@@ -119,6 +122,7 @@ export class ConfidentialEvmScheme implements SchemeNetworkFacilitator {
       requirements,
       confidentialPayload,
       this.extra,
+      this.config.proofVerifier,
     );
   }
 }

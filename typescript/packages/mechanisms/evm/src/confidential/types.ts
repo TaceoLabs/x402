@@ -29,11 +29,23 @@ export type ConfidentialAuthorization = {
 };
 
 /**
+ * Groth16 proof for client-side ZK verification.
+ */
+export type Groth16Proof = {
+  pA: [string, string];
+  pB: [[string, string], [string, string]];
+  pC: [string, string];
+};
+
+/**
  * The full confidential payment payload sent by the client.
  */
 export type ConfidentialEvmPayload = {
   signature: `0x${string}`;
   authorization: ConfidentialAuthorization;
+  clientProof?: Groth16Proof;
+  /** Blinding factor r — sent in plaintext so facilitator can recompute commit(amount, r) */
+  blindingFactor?: string;
 };
 
 /**

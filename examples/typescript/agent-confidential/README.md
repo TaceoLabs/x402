@@ -2,193 +2,205 @@
 
 End-to-end demo of **privacy-preserving machine-to-machine payments** using [x402](https://github.com/coinbase/x402) and [TACEO's](https://taceo.io) confidential payment scheme on **Base Sepolia**.
 
-An AI agent pays $0.05 USDC per API request — but unlike standard x402 where payment amounts are visible on-chain, this scheme **hides amounts** behind Poseidon2 hash commitments and encrypts the real values into secret shares for MPC operators.
+An AI agent pays $0.05 USDC per API request — but unlike standard x402 where payment amounts are visible on-chain, this scheme **hides amounts** behind Poseidon2 hash commitments, encrypts the real values with BabyJubJub ECDH into secret shares for MPC operators, and proves correctness with a **client-side Groth16 ZK proof** verified both off-chain and on-chain.
 
 ## Architecture
 
 ```
 Agent ──► Resource Server (:4021) ──► Facilitator (:4022) ──► Base Sepolia
                (paywall)              (verify + settle)       (PrivateBalance contract)
-                                           │
-                                      Mock MPC (:4023)
-                                        ├── POST /balance-check
+                                           │                     │
+                                      Mock MPC (:4023)     ClientTransferVerifier
+                                        ├── POST /balance-check      (on-chain Groth16)
+                                        ├── POST /transfer-hint
                                         └── poll loop: read_queue → processMPC
 ```
 
-**Flow:**
+**Payment flow:**
 
 1. Agent requests data from a paid API endpoint
 2. Server responds with `402 Payment Required` and the price ($0.05 USDC)
-3. Agent creates a confidential payment — Poseidon2 commitment hiding the amount, 3 encrypted secret shares (one per MPC node), EIP-712 signature
-4. Facilitator checks the sender has sufficient funds (via MPC balance-check), verifies the signature, calls `transferFrom()` on the PrivateBalance contract
-5. On-chain: only cryptographic commitments are stored — the $0.05 amount is never revealed
-6. Mock MPC picks up the queued transfer, recovers plaintext from shares, updates balance commitments on-chain via `processMPC()`
+3. Agent generates a **Groth16 ZK proof** (~800ms) proving:
+   - Poseidon2 commitment matches the amount
+   - Additive 3-of-3 secret shares sum correctly
+   - BabyJubJub ECDH encryption of shares to 3 MPC public keys
+   - Amount fits in 80 bits
+4. Agent sends the proof, commitment, encrypted ciphertext, and EIP-712 signature to the facilitator
+5. Facilitator **verifies the ZK proof off-chain** (snarkjs, ~13ms), checks balance via MPC, verifies signature
+6. Facilitator calls `transferFrom()` — the contract **verifies the proof on-chain** via `ClientTransferVerifier` (Groth16, ~300K gas), then queues the transfer
+7. Only cryptographic commitments are stored on-chain — the $0.05 amount is never revealed
+8. Mock MPC picks up the queued transfer (using a plaintext hint from the facilitator), updates balance commitments via `processMPC()`
+
+## ZK Circuit
+
+The client-side proof uses the `transfer_client(80)` circuit from [Consensys/private-transactions-taceo](https://github.com/Consensys/private-transactions-taceo) (`merces.circom`), with a modified commitment scheme for contract compatibility.
+
+| Metric | Value |
+|--------|-------|
+| Non-linear constraints | 8,896 |
+| Public signals | 15 (encrypt_pk + commitment + ciphertexts + mpc_pks) |
+| Proof generation | ~800ms |
+| Verification (off-chain) | ~13ms |
+| Verification (on-chain) | ~300K gas |
+| WASM size | 187 KB |
+| Proving key (zkey) | 4.8 MB |
+
+Circuit source is in `circom/`. Pre-compiled artifacts are in `artifacts/zk/`.
 
 ## Prerequisites
 
-- **Node.js** >= 20 (tested on v24.1.0)
-- **pnpm** (workspace-aware)
-- **Foundry** (`forge`) — for building contract artifacts
-- Base Sepolia ETH in the MPC wallet (~0.05 ETH for deployment, ~0.01 ETH ongoing for `processMPC` gas)
-- Base Sepolia ETH in the Facilitator wallet (~0.02 ETH for settlement gas)
-- Base Sepolia USDC in the Agent wallet (get from [Circle Faucet](https://faucet.circle.com) — 20 USDC/request)
-- Agent wallet needs ~0.002 ETH for `approve` + `deposit` gas
+- **Node.js** >= 20
+- **pnpm**
 
-## Quick Start (Existing Contracts)
+No Foundry required — contract artifacts are committed in the `artifacts/` directory.
 
-If `.env.sepolia` already exists with deployed contract addresses, you can skip deployment and go straight to running the demo.
+## Quick Start: Local Anvil
 
-### 1. Install dependencies
-
-From the repo root:
+Run the full demo locally with no testnet setup:
 
 ```bash
-cd examples/typescript
+git clone -b feat/zk-client-proof https://github.com/TaceoLabs/x402.git
+cd x402/examples/typescript
 pnpm install
+cd agent-confidential
+pnpm run setup          # builds @x402 workspace packages + frontend
+
+# Start local chain and deploy
+anvil &
+pnpm run deploy         # deploys all contracts, seeds 100 USDC, writes .env
+
+# Start services (in separate terminals or background)
+npx tsx mock-mpc.ts &
+npx tsx facilitator.ts &
+npx tsx server.ts &
+
+# Run the agent (3 paid requests with ZK proofs)
+npx tsx agent.ts
 ```
 
-Build the frontend:
+## Quick Start: Base Sepolia (Pre-funded Wallets)
+
+If you received `.env.sepolia` and `.mpc-balances.json` from a teammate:
 
 ```bash
-cd examples/typescript/agent-confidential
-pnpm run frontend:install
-pnpm run frontend:build
+git clone -b feat/zk-client-proof https://github.com/TaceoLabs/x402.git
+cd x402/examples/typescript
+pnpm install
+
+cd agent-confidential
+pnpm run setup    # builds @x402 workspace packages + frontend
+
+# Drop in the two files from your teammate
+# cp /path/to/.env.sepolia .
+# cp /path/to/.mpc-balances.json .
+
+# Start everything
+./start.sh
+
+# Open http://localhost:4020
+# Stop with: ./start.sh --stop
 ```
 
-### 2. Build contract artifacts
+## Setup from Scratch (Base Sepolia)
 
-The demo loads ABI + bytecode from Foundry build artifacts. From the `private_deposit` repo:
+### 1. Clone and install
 
 ```bash
-cd private_deposit/contracts
-forge build --skip test --skip script
+git clone -b feat/zk-client-proof https://github.com/TaceoLabs/x402.git
+cd x402/examples/typescript
+pnpm install
+
+cd agent-confidential
+pnpm run setup    # builds @x402 workspace packages + frontend
 ```
 
-The path to the artifacts is configured via `CONTRACTS_OUT_DIR` in `.env.sepolia` (default: `../../../../private_deposit/contracts/out`).
-
-### 3. Start Mock MPC
-
-The mock MPC service must start first — it processes deposits and handles balance checks.
+### 2. Generate wallets
 
 ```bash
-pnpm run mock-mpc
+pnpm run generate-wallets
 ```
 
-This starts on `:4023`. It begins with an empty balance map; balances are populated when deposit actions are processed from the on-chain queue.
+This creates 4 fresh wallets (MPC, Facilitator, Agent, Server) and writes `.env.sepolia` with the private keys and Base Sepolia configuration.
 
-### 4. Deposit USDC (if agent has no confidential balance)
+### 3. Fund wallets
 
-The agent needs real USDC deposited into the PrivateBalance contract:
+You need testnet ETH and USDC on Base Sepolia:
 
-1. Get USDC from [Circle Faucet](https://faucet.circle.com) — select Base Sepolia, enter the agent address
-2. Ensure agent has ~0.002 ETH for gas
-3. Run the deposit script:
+| Wallet | What to fund | Why |
+|--------|-------------|-----|
+| **MPC** | ~0.05 ETH | Deploys contracts + ongoing `processMPC` gas |
+| **Facilitator** | ~0.02 ETH | `transferFrom` settlement transactions |
+| **Agent** | ~0.002 ETH | `approve` + `deposit` gas |
+| **Agent** | 20 USDC | Real USDC to deposit into the confidential system |
 
-```bash
-pnpm run deposit:sepolia
-```
+**ETH faucets** (Base Sepolia):
+- https://www.alchemy.com/faucets/base-sepolia
+- https://www.coinbase.com/faucets/base-ethereum-sepolia
 
-This calls `approve()` then `deposit()` on real Base Sepolia USDC. The mock MPC will automatically pick up the deposit action and create the balance commitment.
+**USDC faucet** (Base Sepolia):
+- https://faucet.circle.com — select "Base Sepolia", enter the Agent address, request USDC
 
-You can verify the deposit was processed:
+The wallet addresses are printed by `generate-wallets` and also in `.env.sepolia`.
 
-```bash
-curl http://localhost:4023/status
-```
-
-### 5. Start services
-
-Open separate terminals (or background them) for each service:
-
-```bash
-# Terminal 2 — Facilitator (verify + settle payments)
-pnpm run facilitator:sepolia
-
-# Terminal 3 — Resource Server (sentiment API behind paywall)
-pnpm run server:sepolia
-
-# Terminal 4 — Dashboard (React frontend + orchestration)
-pnpm run dashboard:sepolia
-```
-
-### 6. Run the demo
-
-**Via dashboard:** Open http://localhost:4020 in your browser. Click "Enter Demo", then select a ticker (ETH, BTC, SOL) to trigger a paid API request. The UI shows the payment flow in real-time.
-
-**Via CLI agent:** Run the agent script to make 3 consecutive paid requests:
-
-```bash
-pnpm run agent:sepolia
-```
-
-**Via curl (manual):** Trigger a payment through the dashboard API:
-
-```bash
-curl -X POST http://localhost:4020/api/pay \
-  -H 'Content-Type: application/json' \
-  -d '{"ticker": "ETH"}'
-```
-
-## Fresh Deployment
-
-To deploy new contracts from scratch:
-
-### 1. Generate wallets
-
-You need 4 private keys. Generate them however you prefer, then export:
-
-```bash
-export MPC_PRIVATE_KEY=0x...
-export FACILITATOR_PRIVATE_KEY=0x...
-export AGENT_PRIVATE_KEY=0x...
-export SERVER_PRIVATE_KEY=0x...
-```
-
-### 2. Fund wallets
-
-- **MPC wallet**: ~0.05 ETH (deploys all contracts + ongoing `processMPC` gas)
-- **Facilitator wallet**: ~0.02 ETH (`transferFrom` settlement transactions)
-- **Agent wallet**: ~0.002 ETH (`approve` + `deposit` gas)
-
-Use a Base Sepolia ETH faucet to fund the MPC and Facilitator wallets.
-
-### 3. Build contract artifacts
-
-```bash
-cd private_deposit/contracts
-forge build --skip test --skip script
-```
-
-### 4. Deploy
+### 4. Deploy contracts
 
 ```bash
 pnpm run deploy:sepolia
 ```
 
-This deploys Poseidon2, MockVerifier, QueryMapLib, and PrivateBalance to Base Sepolia using real USDC (`0x036CbD53842c5426634e7929541eC2318f3dCF7e`). It writes all addresses and keys to `.env.sepolia`.
+This deploys Poseidon2, MockVerifier (MPC proof), ClientTransferVerifier (client ZK proof), QueryMapLib, and PrivateBalance to Base Sepolia using real USDC (`0x036CbD53842c5426634e7929541eC2318f3dCF7e`). It updates `.env.sepolia` with all deployed contract addresses.
 
-### 5. Start services, deposit, and run
+### 5. Start and deposit
 
-Follow steps 3-6 from the Quick Start section above.
+```bash
+./start.sh --deposit
+```
+
+This starts all 4 services, then deposits the agent's USDC into the PrivateBalance contract (`approve()` → `deposit()`). The mock MPC automatically processes the deposit and creates the agent's balance commitment.
+
+### 6. Run the demo
+
+Open http://localhost:4020. Click "Enter Demo", then pick a ticker (ETH, BTC, SOL) to trigger a paid API request. The UI shows the full payment flow in real-time.
+
+**CLI agent** (makes 3 consecutive paid requests with ZK proofs):
+
+```bash
+pnpm run agent:sepolia
+```
+
+**Stop everything:**
+
+```bash
+./start.sh --stop
+```
+
+**Restart later:**
+
+```bash
+./start.sh    # MPC balances persist across restarts
+```
 
 ## Services
 
-| Service | Port | Script | Description |
-|---------|------|--------|-------------|
-| Mock MPC | 4023 | `pnpm run mock-mpc` | Balance-check endpoint + action queue processor |
-| Facilitator | 4022 | `pnpm run facilitator:sepolia` | Verifies payments, checks balance via MPC, settles on-chain |
-| Resource Server | 4021 | `pnpm run server:sepolia` | Sentiment API behind $0.05 USDC confidential paywall |
-| Dashboard | 4020 | `pnpm run dashboard:sepolia` | React frontend with live flow visualization + SSE events |
-| Agent (CLI) | — | `pnpm run agent:sepolia` | Makes 3 paid requests (ETH, BTC, SOL sentiment) |
+| Service | Port | Description |
+|---------|------|-------------|
+| Mock MPC | 4023 | Balance-check + transfer-hint endpoints + action queue processor |
+| Facilitator | 4022 | Off-chain ZK proof verify, MPC balance check, on-chain settle |
+| Resource Server | 4021 | Sentiment API behind $0.05 USDC confidential paywall |
+| Dashboard | 4020 | React frontend with live flow visualization + SSE events |
+| Agent (CLI) | — | Generates ZK proofs, makes 3 paid requests (ETH, BTC, SOL) |
 
-## Contracts (Base Sepolia)
+## Contracts
 
 | Contract | Purpose |
 |----------|---------|
-| PrivateBalance | Confidential token — stores Poseidon2 commitments, handles `transferFrom` + `deposit`, manages action queue |
-| Poseidon2 | Hash function for balance commitments |
-| MockVerifier | Always-true Groth16 verifier (placeholder for real MPC prover) |
-| USDC | Real Base Sepolia USDC (`0x036CbD53842c5426634e7929541eC2318f3dCF7e`) |
+| **PrivateBalance** | Confidential token — Poseidon2 commitments, `transferFrom` with on-chain ZK verification, `deposit`, action queue |
+| **ClientTransferVerifier** | On-chain Groth16 verifier for client ZK proofs (15 public signals) |
+| **Poseidon2** | Hash function for balance commitments |
+| **MockVerifier** | Always-true Groth16 verifier for mock MPC batch proofs |
+| **USDC** | Real Base Sepolia USDC (`0x036CbD53842c5426634e7929541eC2318f3dCF7e`) |
+
+Pre-compiled contract artifacts are in `artifacts/`. If you need to rebuild them from source, see the [private_deposit](https://github.com/TaceoLabs/private_deposit) repo (`forge build --skip test --skip script`).
 
 ## What's Real vs Mocked
 
@@ -197,33 +209,48 @@ Follow steps 3-6 from the Quick Start section above.
 | x402 protocol flow (402 → sign → settle) | Real |
 | EIP-712 signatures | Real |
 | Poseidon2 commitments | Real |
+| Client-side Groth16 ZK proof | Real (snarkjs, ~800ms) |
+| On-chain ZK proof verification | Real (ClientTransferVerifier, ~300K gas) |
+| Off-chain ZK proof verification | Real (snarkjs groth16.verify, ~13ms) |
+| BabyJubJub ECDH encryption | Real |
 | Ciphertext secret shares (3-of-3) | Real |
-| BabyJubJub encryption | Real |
 | On-chain settlement (`transferFrom`) | Real (Base Sepolia) |
 | USDC deposits (`approve` → `deposit`) | Real (Base Sepolia USDC) |
 | On-chain queue processing (`processMPC`) | Real (Base Sepolia) |
-| Groth16 ZK proof verification | Mocked (MockVerifier always returns true) |
-| MPC network (3 nodes) | Mocked (single service recovers shares locally) |
+| MPC batch proof verification | Mocked (MockVerifier always returns true) |
+| MPC network (3 nodes) | Mocked (single service with facilitator transfer hints) |
 
-## File Overview
+## Files
 
 | File | Description |
 |------|-------------|
-| `deploy-sepolia.ts` | Deploys all contracts to Base Sepolia, writes `.env.sepolia` |
+| `start.sh` | One-command launcher — starts/stops all services |
+| `generate-wallets.ts` | Creates 4 wallets, writes `.env.sepolia` template |
+| `deploy.ts` | Deploys all contracts to local anvil |
+| `deploy-sepolia.ts` | Deploys all contracts to Base Sepolia |
 | `deposit-sepolia.ts` | Real USDC `approve()` → `deposit()` flow |
-| `mock-mpc.ts` | Mock MPC service — balance checks + action queue processing |
-| `facilitator.ts` | x402 facilitator with confidential scheme + MPC balance check |
+| `mock-mpc.ts` | Mock MPC — balance checks, transfer hints, action queue processing |
+| `facilitator.ts` | x402 facilitator — ZK proof verification + MPC balance check + settle |
 | `server.ts` | Resource server with x402 paywall middleware |
-| `agent.ts` | CLI agent that makes 3 paid requests |
+| `agent.ts` | CLI agent — generates ZK proofs, makes 3 paid requests |
 | `dashboard.ts` | Express backend — SSE events, status API, payment orchestration |
 | `frontend/` | React UI — flow diagram, event log, on-chain view |
+| `artifacts/` | Pre-compiled Solidity contract ABIs and bytecode |
+| `artifacts/zk/` | ZK circuit artifacts (WASM, proving key, verification key) |
+| `circom/` | Circom circuit source (transfer_client, taceolib, circomlib) |
 
 ## Troubleshooting
 
-**"insufficient_confidential_balance"** — The agent hasn't deposited USDC or the mock MPC hasn't processed the deposit yet. Check `curl http://localhost:4023/status` to see tracked balances.
+**"insufficient_confidential_balance"** — The agent hasn't deposited USDC or the mock MPC hasn't processed the deposit yet. Check `curl http://localhost:4023/status` to see tracked balances. Make sure mock-mpc is running.
 
-**"nonce too low"** — Base Sepolia RPC nonce caching. Wait a few seconds and retry.
+**"invalid_client_proof"** — The ZK proof failed off-chain verification. Check that `artifacts/zk/verification_key.json` matches the proving key. Ensure the facilitator loaded the verification key (check startup logs).
 
-**Mock MPC not processing actions** — Ensure it's running (`curl http://localhost:4023/health`). Check logs for errors. The MPC wallet needs ETH for `processMPC` gas (~0.003 ETH per batch).
+**"nonce too low"** — Base Sepolia RPC nonce caching. Wait a few seconds and retry the command.
 
-**Dashboard shows stale data** — Refresh the browser. If the frontend was rebuilt, restart the dashboard service.
+**Mock MPC not processing actions** — Ensure it's running (`curl http://localhost:4023/health`). The MPC wallet needs ETH for `processMPC` gas (~0.003 ETH per batch). Check that the facilitator sends transfer hints before settling (look for "Transfer hint received" in MPC logs).
+
+**Deploy fails with "MPC wallet needs at least 0.01 ETH"** — Fund the MPC wallet address (shown in `.env.sepolia` as `MPC_ADDRESS`) with Base Sepolia ETH from a faucet.
+
+**Dashboard shows stale data** — Hard refresh the browser. If the frontend was rebuilt, restart the dashboard service.
+
+**MPC balance persistence** — The mock MPC saves balances to `.mpc-balances.json` so they survive restarts. Delete this file to reset to a clean state (you'll need to re-deposit).
