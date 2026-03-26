@@ -59,7 +59,7 @@ No Foundry required — contract artifacts are committed in the `artifacts/` dir
 Run the full demo locally with no testnet setup:
 
 ```bash
-git clone -b feat/zk-client-proof https://github.com/TaceoLabs/x402.git
+git clone -b feat/base-sepolia https://github.com/TaceoLabs/x402.git
 cd x402/examples/typescript
 pnpm install
 cd agent-confidential
@@ -83,7 +83,7 @@ npx tsx agent.ts
 If you received `.env.sepolia` and `.mpc-balances.json` from a teammate:
 
 ```bash
-git clone -b feat/zk-client-proof https://github.com/TaceoLabs/x402.git
+git clone -b feat/base-sepolia https://github.com/TaceoLabs/x402.git
 cd x402/examples/typescript
 pnpm install
 
@@ -106,7 +106,7 @@ pnpm run setup    # builds @x402 workspace packages + frontend
 ### 1. Clone and install
 
 ```bash
-git clone -b feat/zk-client-proof https://github.com/TaceoLabs/x402.git
+git clone -b feat/base-sepolia https://github.com/TaceoLabs/x402.git
 cd x402/examples/typescript
 pnpm install
 
