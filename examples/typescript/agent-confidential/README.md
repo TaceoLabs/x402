@@ -239,6 +239,35 @@ Pre-compiled contract artifacts are in `artifacts/`. If you need to rebuild them
 | `artifacts/zk/` | ZK circuit artifacts (WASM, proving key, verification key) |
 | `circom/` | Circom circuit source (transfer_client, taceolib, circomlib) |
 
+## Using the Confidential Scheme in Your Own App
+
+The confidential payment scheme is implemented as a standard x402 scheme in the `@x402/evm` package, under the `confidential/` subpath. You can import it the same way you'd use the `exact` scheme:
+
+```typescript
+// Client — generates payments with ZK proofs
+import { ConfidentialEvmScheme } from "@x402/evm/confidential/client";
+import type { ProofGenerator } from "@x402/evm/confidential/client";
+
+// Facilitator — verifies proofs + settles on-chain
+import { ConfidentialEvmScheme } from "@x402/evm/confidential/facilitator";
+import type { ProofVerifier } from "@x402/evm/confidential/facilitator";
+
+// Resource Server — parses prices + enhances payment requirements
+import { ConfidentialEvmScheme } from "@x402/evm/confidential/server";
+
+// Shared types
+import type {
+  ConfidentialEvmPayload,
+  ConfidentialCiphertext,
+  BabyJubJubPoint,
+  Groth16Proof,
+} from "@x402/evm";
+```
+
+**Source code**: `typescript/packages/mechanisms/evm/src/confidential/`
+
+The scheme plugs into the standard `x402Client`, `x402Facilitator`, and `x402ResourceServer` via `.register(network, scheme)` — see `agent.ts`, `facilitator.ts`, and `server.ts` in this demo for working examples.
+
 ## Troubleshooting
 
 **"insufficient_confidential_balance"** — The agent hasn't deposited USDC or the mock MPC hasn't processed the deposit yet. Check `curl http://localhost:4023/status` to see tracked balances. Make sure mock-mpc is running.
