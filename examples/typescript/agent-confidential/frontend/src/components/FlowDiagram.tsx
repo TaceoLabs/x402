@@ -6,7 +6,7 @@ const NODES = [
   { id: "agent", label: "Agent", icon: "\u{1F916}", desc: "AI Client" },
   { id: "server", label: "Resource Server", icon: "\u{1F5A5}\uFE0F", desc: "Sentiment API" },
   { id: "facilitator", label: "Facilitator", icon: "\u{1F50F}", desc: "Verify & Settle" },
-  { id: "chain", label: "Blockchain", icon: "\u26D3\uFE0F", desc: "Base Sepolia" },
+  { id: "chain", label: "Blockchain", icon: "\u26D3\uFE0F", desc: "On-chain Verification" },
 ];
 
 type NodeState = "idle" | "active" | "done";

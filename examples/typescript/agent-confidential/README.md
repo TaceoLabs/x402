@@ -33,7 +33,7 @@ Agent ──► Resource Server (:4021) ──► Facilitator (:4022) ──► 
 
 ## ZK Circuit
 
-The client-side proof uses the `transfer_client(80)` circuit from [Consensys/private-transactions-taceo](https://github.com/Consensys/private-transactions-taceo) (`merces.circom`), with a modified commitment scheme for contract compatibility.
+The client-side proof uses the `transfer_client(80)` circuit (`merces.circom`), with a modified commitment scheme for contract compatibility.
 
 | Metric | Value |
 |--------|-------|
@@ -64,7 +64,7 @@ cd x402/examples/typescript
 pnpm install
 cd agent-confidential
 pnpm run setup              # builds @x402 workspace packages + frontend
-./start-local.sh --agent    # deploys, starts all services, runs 3 ZK payments
+./start-local.sh            # deploys, starts all services, runs 3 ZK payments
 ```
 
 Stop everything with `./start-local.sh --stop`.

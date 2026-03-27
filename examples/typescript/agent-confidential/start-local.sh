@@ -7,9 +7,8 @@ set -euo pipefail
 # No testnet, no faucets, no wallet funding — everything runs locally.
 #
 # Usage:
-#   ./start-local.sh          Deploy + start all services
+#   ./start-local.sh          Deploy, start all services, run 3 ZK payments
 #   ./start-local.sh --stop   Kill anvil + all services
-#   ./start-local.sh --agent  Deploy + start services + run 3 agent payments
 #
 # Prerequisites:
 #   - anvil installed (comes with Foundry: https://book.getfoundry.sh)
@@ -185,25 +184,26 @@ if [[ -d "frontend/dist" ]]; then
 fi
 
 echo ""
-if $ALL_OK; then
-  log "All services running on local anvil!"
-  log "Agent has 100 USDC (seeded by deploy)"
-  echo ""
-  log "Run agent:     ${CYAN}pnpm run agent${NC}"
-  log "Open UI:       ${CYAN}http://localhost:4020${NC}"
-  log "Stop:          ${CYAN}./start-local.sh --stop${NC}"
-else
+if ! $ALL_OK; then
   warn "Some services failed to start."
+  exit 1
 fi
 
-# ── Optional: Run Agent ──────────────────────────────────────────────────────
+log "All services running on local anvil!"
+log "Agent has 100 USDC (seeded by deploy)"
 
-if [[ "${1:-}" == "--agent" ]]; then
-  echo ""
-  log "Running agent (3 paid requests with ZK proofs)..."
-  echo ""
-  pnpm run agent
-fi
+# ── Run Agent ────────────────────────────────────────────────────────────────
 
 echo ""
-log "PIDs saved to .demo-local-pids"
+log "Running agent (3 paid requests with ZK proofs)..."
+echo ""
+pnpm run agent
+
+echo ""
+log "All 3 payments settled with ZK proofs!"
+echo ""
+log "Now try it yourself in the browser:"
+echo ""
+echo -e "  ${CYAN}http://localhost:4020${NC}"
+echo ""
+log "Stop everything with: ${CYAN}./start-local.sh --stop${NC}"

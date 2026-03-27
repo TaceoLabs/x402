@@ -104,7 +104,19 @@ export default function EventLog({ events }: Props) {
 
                   {event.type === "settled" && event.transaction && (
                     <p className="text-xs text-slate-500 font-mono mt-0.5 break-all">
-                      tx: {event.transaction}
+                      tx:{" "}
+                      {event.network === "eip155:84532" ? (
+                        <a
+                          href={`https://sepolia.basescan.org/tx/${event.transaction}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-400 hover:text-blue-300 underline"
+                        >
+                          {event.transaction}
+                        </a>
+                      ) : (
+                        event.transaction
+                      )}
                     </p>
                   )}
 
