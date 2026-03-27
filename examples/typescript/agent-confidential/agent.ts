@@ -195,7 +195,9 @@ async function main() {
   console.log("=".repeat(60));
 }
 
-main().catch((err) => {
-  console.error("[Agent] Fatal error:", err);
-  process.exit(1);
-});
+main()
+  .then(() => process.exit(0))
+  .catch((err) => {
+    console.error("[Agent] Fatal error:", err);
+    process.exit(1);
+  });
