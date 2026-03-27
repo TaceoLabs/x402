@@ -57,6 +57,15 @@ stop_services() {
   else
     log "No running services found"
   fi
+
+  # Restore sepolia files if they were backed up
+  if [[ -f ".mpc-balances.json.sepolia-bak" ]]; then
+    mv .mpc-balances.json.sepolia-bak .mpc-balances.json
+    log "Restored .mpc-balances.json from backup"
+  fi
+  if [[ -f ".env.local-bak" ]]; then
+    mv .env.local-bak .env
+  fi
 }
 
 if [[ "${1:-}" == "--stop" ]]; then
@@ -89,6 +98,12 @@ if ! curl -s http://127.0.0.1:8545 -X POST -H "Content-Type: application/json" \
   exit 1
 fi
 log "Anvil ${GREEN}ready${NC} (chain 31337)"
+
+# ── Backup sepolia files ─────────────────────────────────────────────────────
+
+# Save .mpc-balances.json and .env so the local run doesn't clobber Base Sepolia state
+[[ -f ".mpc-balances.json" ]] && cp .mpc-balances.json .mpc-balances.json.sepolia-bak
+[[ -f ".env" ]] && cp .env .env.local-bak
 
 # ── Deploy Contracts ─────────────────────────────────────────────────────────
 
