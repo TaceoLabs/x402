@@ -12,6 +12,7 @@ export interface DemoEvent {
     receiver?: string;
     nonce?: string;
     deadline?: string;
+    hasClientProof?: boolean;
     hasCiphertext?: boolean;
     hasSignature?: boolean;
   };

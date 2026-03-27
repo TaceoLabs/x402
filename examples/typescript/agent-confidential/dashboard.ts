@@ -268,8 +268,8 @@ app.post("/api/pay", async (req: Request, res: Response) => {
     broadcast({ step: 2, type: "payment_required", timestamp: Date.now() });
     await delay(STEP_DELAY_MS);
 
-    // Step 3-4: Create confidential payment payload
-    broadcast({ step: 3, type: "creating_payment", timestamp: Date.now() });
+    // Step 3-4: Generate ZK proof + create confidential payment payload
+    broadcast({ step: 3, type: "generating_proof", timestamp: Date.now() });
     await delay(STEP_DELAY_MS);
 
     const paymentPayload = await httpClient.createPaymentPayload(paymentRequired);
@@ -288,6 +288,7 @@ app.post("/api/pay", async (req: Request, res: Response) => {
         receiver: auth?.receiver as string | undefined,
         nonce: auth?.nonce as string | undefined,
         deadline: auth?.deadline as string | undefined,
+        hasClientProof: !!payload?.clientProof,
         hasCiphertext: !!auth?.ciphertext,
         hasSignature: !!payload?.signature,
       },

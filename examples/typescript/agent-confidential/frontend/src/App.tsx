@@ -131,9 +131,9 @@ function AboutPage({ onStart, status }: { onStart: () => void; status: ServiceSt
             <p className="text-lg text-slate-400 max-w-xl mx-auto leading-relaxed">
               AI agents pay for API access using the{" "}
               <span className="text-slate-200">HTTP 402</span> protocol &mdash; but
-              with a twist: payment amounts are{" "}
-              <span className="text-blue-300">hidden on-chain</span> using
-              multi-party computation.
+              with a twist: a{" "}
+              <span className="text-blue-300">client-side ZK proof</span> hides payment
+              amounts on-chain, verified by a Groth16 verifier in the smart contract.
             </p>
           </div>
 
@@ -161,9 +161,11 @@ function AboutPage({ onStart, status }: { onStart: () => void; status: ServiceSt
                   Standard x402 payments are <Hl>fully transparent</Hl> &mdash;
                   anyone can see amounts on the blockchain. TACEO&apos;s confidential
                   scheme replaces raw amounts with{" "}
-                  <Hl>Poseidon2 hash commitments</Hl> and encrypts the real value
-                  into <Hl>3-of-3 secret shares</Hl> for MPC operators. The payment
-                  settles on-chain, but the amount stays private.
+                  <Hl>Poseidon2 hash commitments</Hl>, encrypts value into{" "}
+                  <Hl>BabyJubJub ECDH secret shares</Hl> for MPC operators, and
+                  attaches a <Hl>Groth16 ZK proof</Hl> proving the commitment,
+                  shares, and encryption are all correct &mdash; verified both
+                  off-chain by the facilitator and on-chain by the smart contract.
                 </>
               }
             />
@@ -210,22 +212,28 @@ function AboutPage({ onStart, status }: { onStart: () => void; status: ServiceSt
             <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wider">
               How this demo works
             </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 text-sm">
+            <div className="grid grid-cols-1 sm:grid-cols-5 gap-4 text-sm">
               <Step n={1} title="Agent requests data">
                 An AI agent calls a paid sentiment-analysis API. The server responds
                 with <code className="text-amber-300/80 text-xs">402</code> and the price: $0.05 USDC.
               </Step>
-              <Step n={2} title="Payment is created">
-                The agent generates a Poseidon2 commitment hiding the amount, splits
-                it into encrypted secret shares, and signs everything with EIP-712.
+              <Step n={2} title="ZK proof generated">
+                The agent generates a <Hl>Groth16 ZK proof</Hl> (~800ms) proving the
+                Poseidon2 commitment, secret sharing, and BabyJubJub encryption are
+                all correct. Signs with EIP-712.
               </Step>
-              <Step n={3} title="Facilitator settles">
-                A facilitator verifies the signature, checks the on-chain balance
-                commitment, and calls{" "}
-                <code className="text-xs text-blue-300/80">transferFrom()</code> on
-                the confidential token contract.
+              <Step n={3} title="Proof verified off-chain">
+                The facilitator verifies the ZK proof via{" "}
+                <code className="text-xs text-blue-300/80">snarkjs</code> (~13ms),
+                checks the MPC balance, and verifies the EIP-712 signature.
               </Step>
-              <Step n={4} title="Data delivered">
+              <Step n={4} title="Proof verified on-chain">
+                The contract&apos;s{" "}
+                <code className="text-xs text-blue-300/80">ClientTransferVerifier</code>{" "}
+                verifies the Groth16 proof against 15 public signals, then enqueues
+                the transfer.
+              </Step>
+              <Step n={5} title="Data delivered">
                 The agent gets its sentiment data. On-chain, only cryptographic
                 commitments are visible &mdash; the actual $0.05 is never revealed.
               </Step>
@@ -245,7 +253,7 @@ function AboutPage({ onStart, status }: { onStart: () => void; status: ServiceSt
               />
               <Actor
                 name="Facilitator"
-                desc="Verifies payments & settles on-chain (port 4022)"
+                desc="Verifies ZK proofs off-chain, settles on-chain (port 4022)"
                 online={status?.facilitator.status === "online"}
               />
               {status?.mpc && (
@@ -257,12 +265,12 @@ function AboutPage({ onStart, status }: { onStart: () => void; status: ServiceSt
               )}
               <Actor
                 name="Blockchain"
-                desc={status?.chain?.name ? `${status.chain.name} — confidential token contract` : "Confidential token contract on-chain"}
+                desc={status?.chain?.name ? `${status.chain.name} — Groth16 verifier + confidential token` : "On-chain Groth16 verifier + confidential token"}
                 online={!!status?.chain}
               />
               <Actor
                 name="Agent (this dashboard)"
-                desc="Creates and signs confidential payments (port 4020)"
+                desc="Generates ZK proofs + signs confidential payments (port 4020)"
                 online={true}
               />
             </div>

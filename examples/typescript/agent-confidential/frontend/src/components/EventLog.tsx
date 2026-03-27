@@ -9,10 +9,11 @@ const EVENT_META: Record<string, { label: string; color: string }> = {
   request_start: { label: "Request initiated", color: "text-blue-400" },
   payment_required: { label: "402 Payment Required", color: "text-amber-400" },
   creating_payment: { label: "Creating confidential payment...", color: "text-blue-300" },
-  payment_created: { label: "Payment payload signed (EIP-712)", color: "text-purple-400" },
-  payment_sent: { label: "Resending with payment header", color: "text-blue-400" },
-  verifying: { label: "Facilitator verifying & settling...", color: "text-amber-300" },
-  settled: { label: "Settled on-chain", color: "text-green-400" },
+  generating_proof: { label: "Generating Groth16 ZK proof (~800ms)...", color: "text-blue-300" },
+  payment_created: { label: "ZK proof generated + payload signed (EIP-712)", color: "text-purple-400" },
+  payment_sent: { label: "Resending with payment + proof header", color: "text-blue-400" },
+  verifying: { label: "Facilitator verifying ZK proof + settling on-chain...", color: "text-amber-300" },
+  settled: { label: "Settled on-chain (Groth16 verified by contract)", color: "text-green-400" },
   response_received: { label: "Response received", color: "text-green-400" },
   settlement_failed: { label: "Settlement failed", color: "text-red-400" },
   error: { label: "Error", color: "text-red-400" },
@@ -69,6 +70,14 @@ export default function EventLog({ events }: Props) {
                   {event.type === "payment_created" && event.payload && (
                     <div className="text-xs text-slate-500 mt-1 space-y-0.5 font-mono bg-slate-800/50 rounded p-2 border border-slate-700/50">
                       <p>
+                        <span className="text-slate-600">zkProof:</span>{" "}
+                        {event.payload.hasClientProof ? (
+                          <span className="text-green-400/70">Groth16 (15 public signals)</span>
+                        ) : (
+                          <span className="text-amber-300/70">not included</span>
+                        )}
+                      </p>
+                      <p>
                         <span className="text-slate-600">commitment:</span>{" "}
                         <span className="text-amber-300/70">
                           {truncate(event.payload.amountCommitment ?? "")}
@@ -77,7 +86,7 @@ export default function EventLog({ events }: Props) {
                       <p>
                         <span className="text-slate-600">ciphertext:</span>{" "}
                         {event.payload.hasCiphertext ? (
-                          <span className="text-green-400/70">3-of-3 secret shares</span>
+                          <span className="text-green-400/70">BabyJubJub ECDH encrypted shares</span>
                         ) : (
                           <span className="text-red-400/70">missing</span>
                         )}
