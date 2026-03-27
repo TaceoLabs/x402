@@ -56,27 +56,18 @@ No Foundry required — contract artifacts are committed in the `artifacts/` dir
 
 ## Quick Start: Local Anvil
 
-Run the full demo locally with no testnet setup:
+Run the full demo locally with no testnet setup. Requires [Foundry](https://book.getfoundry.sh) (for `anvil`).
 
 ```bash
 git clone -b feat/base-sepolia https://github.com/TaceoLabs/x402.git
 cd x402/examples/typescript
 pnpm install
 cd agent-confidential
-pnpm run setup          # builds @x402 workspace packages + frontend
-
-# Start local chain and deploy
-anvil &
-pnpm run deploy         # deploys all contracts, seeds 100 USDC, writes .env
-
-# Start services (in separate terminals or background)
-npx tsx mock-mpc.ts &
-npx tsx facilitator.ts &
-npx tsx server.ts &
-
-# Run the agent (3 paid requests with ZK proofs)
-npx tsx agent.ts
+pnpm run setup              # builds @x402 workspace packages + frontend
+./start-local.sh --agent    # deploys, starts all services, runs 3 ZK payments
 ```
+
+Stop everything with `./start-local.sh --stop`.
 
 ## Quick Start: Base Sepolia (Pre-funded Wallets)
 
