@@ -27,7 +27,11 @@ import { publicActions } from "viem";
 import { x402Client, x402HTTPClient } from "@x402/axios";
 import { ConfidentialEvmScheme } from "@x402/evm/confidential/client";
 import { toClientEvmSigner } from "@x402/evm";
+import type { ProofGenerator } from "@x402/evm/confidential/client";
 import type { Network } from "@x402/core/types";
+import type { ConfidentialCiphertext, BabyJubJubPoint } from "@x402/evm";
+import * as snarkjs from "snarkjs";
+import crypto from "crypto";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -65,8 +69,62 @@ const viemClient = createWalletClient({
 const signer = toClientEvmSigner(account, viemClient);
 const NETWORK: Network = `eip155:${CHAIN_ID}`;
 
+// ── ZK Proof Generator ──────────────────────────────────────────────────────
+
+const BN254_PRIME = BigInt("0x30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000001");
+const BJJ_FR = BigInt("2736030358979909402780800718157159386076813972158567259200215660948447373041");
+
+const WASM_PATH = resolve(__dirname, "./artifacts/zk/merces_client.wasm");
+const ZKEY_PATH = resolve(__dirname, "./artifacts/zk/merces_client.zkey");
+
+const proofGenerator: ProofGenerator = async (amount, r, mpcPublicKeys) => {
+  const encryptSk = BigInt("0x" + crypto.randomBytes(32).toString("hex")) % BJJ_FR;
+  const shareAmount = [
+    BigInt("0x" + crypto.randomBytes(32).toString("hex")) % BN254_PRIME,
+    BigInt("0x" + crypto.randomBytes(32).toString("hex")) % BN254_PRIME,
+  ];
+  const shareR = [
+    BigInt("0x" + crypto.randomBytes(32).toString("hex")) % BN254_PRIME,
+    BigInt("0x" + crypto.randomBytes(32).toString("hex")) % BN254_PRIME,
+  ];
+
+  const { proof, publicSignals } = await snarkjs.groth16.fullProve(
+    {
+      amount: amount.toString(),
+      amount_r: r.toString(),
+      encrypt_sk: encryptSk.toString(),
+      mpc_pks: mpcPublicKeys.map((pk: BabyJubJubPoint) => [pk.x, pk.y]),
+      share_amount: shareAmount.map((s: bigint) => s.toString()),
+      share_amount_r: shareR.map((s: bigint) => s.toString()),
+    },
+    WASM_PATH,
+    ZKEY_PATH,
+  );
+
+  const ciphertext: ConfidentialCiphertext = {
+    amount: [publicSignals[3], publicSignals[5], publicSignals[7]],
+    r: [publicSignals[4], publicSignals[6], publicSignals[8]],
+    senderPk: { x: publicSignals[0], y: publicSignals[1] },
+  };
+
+  return {
+    proof: {
+      pA: [proof.pi_a[0], proof.pi_a[1]] as [string, string],
+      pB: [
+        [proof.pi_b[0][0], proof.pi_b[0][1]],
+        [proof.pi_b[1][0], proof.pi_b[1][1]],
+      ] as [[string, string], [string, string]],
+      pC: [proof.pi_c[0], proof.pi_c[1]] as [string, string],
+    },
+    amountCommitment: BigInt(publicSignals[2]),
+    ciphertext,
+  };
+};
+
+// ── x402 Client ─────────────────────────────────────────────────────────────
+
 const client = new x402Client();
-client.register(NETWORK, new ConfidentialEvmScheme(signer));
+client.register(NETWORK, new ConfidentialEvmScheme(signer, proofGenerator));
 const httpClient = new x402HTTPClient(client);
 
 // ── ABI fragments for reading contract state ────────────────────────────────────
