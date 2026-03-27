@@ -1,6 +1,6 @@
 # Confidential x402 Agent Demo
 
-End-to-end demo of **privacy-preserving machine-to-machine payments** using [x402](https://github.com/coinbase/x402) and [TACEO's](https://taceo.io) confidential payment scheme on **Base Sepolia**.
+End-to-end demo of **privacy-preserving machine-to-machine payments** using [x402](https://github.com/coinbase/x402) and [TACEO's](https://github.com/TaceoLabs/private_deposit) confidential payment scheme on **Base Sepolia**.
 
 An AI agent pays $0.05 USDC per API request — but unlike standard x402 where payment amounts are visible on-chain, this scheme **hides amounts** behind Poseidon2 hash commitments, encrypts the real values with BabyJubJub ECDH into secret shares for MPC operators, and proves correctness with a **client-side Groth16 ZK proof** verified both off-chain and on-chain.
 
@@ -133,9 +133,8 @@ You need testnet ETH and USDC on Base Sepolia:
 | **Agent** | ~0.002 ETH | `approve` + `deposit` gas |
 | **Agent** | 20 USDC | Real USDC to deposit into the confidential system |
 
-**ETH faucets** (Base Sepolia):
+**ETH faucet** (Base Sepolia):
 - https://www.alchemy.com/faucets/base-sepolia
-- https://www.coinbase.com/faucets/base-ethereum-sepolia
 
 **USDC faucet** (Base Sepolia):
 - https://faucet.circle.com — select "Base Sepolia", enter the Agent address, request USDC
