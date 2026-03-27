@@ -364,10 +364,10 @@ async function pollAndProcess() {
           transferHints.splice(hintIdx, 1);
           console.log(`[MPC]   Transfer: ${Number(plaintextAmount) / 1e6} USDC (from facilitator hint)`);
         } else {
-          // Fallback: try summing ciphertext shares (works only with plaintext shares, not encrypted)
-          const ct = ciphertexts[i] as { amount: [bigint, bigint, bigint]; r: [bigint, bigint, bigint] };
-          plaintextAmount = (ct.amount[0] + ct.amount[1] + ct.amount[2]) % BN254_PRIME;
-          console.log(`[MPC]   Transfer: ${Number(plaintextAmount) / 1e6} USDC (from ciphertext sum — may be incorrect if encrypted)`);
+          // No hint available — skip this action to avoid corrupting balances
+          // with garbage from encrypted ciphertext shares
+          console.log(`[MPC]   Transfer: skipping (no hint available, ciphertext is encrypted)`);
+          continue;
         }
 
         // Update balances
