@@ -175,9 +175,9 @@ for pair in "4023:Mock MPC" "4022:Facilitator" "4021:Server" "4020:Dashboard"; d
   port="${pair%%:*}"
   name="${pair#*:}"
   if curl -s "http://localhost:$port/health" > /dev/null 2>&1 || curl -s "http://localhost:$port/api/status" > /dev/null 2>&1; then
-    echo -e "  ${GREEN}✓${NC} $name          :$port"
+    printf "  ${GREEN}✓${NC} %-20s :${port}\n" "$name"
   else
-    echo -e "  ${RED}✗${NC} $name          :$port"
+    printf "  ${RED}✗${NC} %-20s :${port}\n" "$name"
     ALL_OK=false
   fi
 done

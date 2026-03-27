@@ -168,18 +168,18 @@ for pair in "8545:Anvil" "4023:Mock MPC" "4022:Facilitator" "4021:Server"; do
   if curl -s "http://localhost:$port/health" > /dev/null 2>&1 || \
      curl -s "http://127.0.0.1:$port" -X POST -H "Content-Type: application/json" \
        -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' > /dev/null 2>&1; then
-    echo -e "  ${GREEN}✓${NC} $name          :$port"
+    printf "  ${GREEN}✓${NC} %-20s :${port}\n" "$name"
   else
-    echo -e "  ${RED}✗${NC} $name          :$port"
+    printf "  ${RED}✗${NC} %-20s :${port}\n" "$name"
     ALL_OK=false
   fi
 done
 
 if [[ -d "frontend/dist" ]]; then
   if curl -s http://localhost:4020/api/status > /dev/null 2>&1; then
-    echo -e "  ${GREEN}✓${NC} Dashboard          :4020"
+    printf "  ${GREEN}✓${NC} %-20s :4020\n" "Dashboard"
   else
-    echo -e "  ${YELLOW}~${NC} Dashboard          :4020 (still starting)"
+    printf "  ${YELLOW}~${NC} %-20s :4020 (still starting)\n" "Dashboard"
   fi
 fi
 
