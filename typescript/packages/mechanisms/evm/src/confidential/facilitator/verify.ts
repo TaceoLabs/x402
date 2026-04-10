@@ -5,20 +5,30 @@ import {
 } from "@x402/core/types";
 import { getAddress } from "viem";
 import { FacilitatorEvmSigner } from "../../signer";
-import { ConfidentialEvmPayload, ConfidentialExtra, Groth16Proof } from "../types";
-import { transferFromTypes, privateBalanceABI, ZERO_COMMITMENT } from "../constants";
+import { ConfidentialEvmPayload, ConfidentialExtra, CompressedGroth16Proof } from "../types";
+import { transferFromTypes, mercesABI, ZERO_COMMITMENT } from "../constants";
 import { isOnBabyJubJubCurve, isInField, hashCiphertext } from "../crypto";
 
 /**
- * Callback type for verifying a client ZK proof off-chain.
+ * Callback type for verifying a compressed client ZK proof off-chain.
+ *
+ * The facilitator calls this before submitting to the contract. The `publicSignals` array
+ * contains the 15 values in circuit order: encrypt_pk(2), amount_c(1), ciphertexts(6), mpc_pks(6).
+ * The `beta` is the random challenge from the compressed proof.
+ *
+ * The verifier should:
+ * 1. Compute alpha = sha256(abi.encodePacked(publicSignals)), drop top 3 bits
+ * 2. Compute gamma = UHF(alpha, beta, publicSignals) — Horner evaluation mod PRIME
+ * 3. Verify the compressed proof against [beta, gamma, alpha]
  */
 export type ProofVerifier = (
-  proof: Groth16Proof,
+  proof: CompressedGroth16Proof,
   publicSignals: string[],
+  beta: string,
 ) => Promise<boolean>;
 
 /**
- * 12-step verification for a confidential payment payload.
+ * Verification for a confidential payment payload.
  *
  * 1. Scheme matches "confidential"
  * 2. Network matches
@@ -29,9 +39,8 @@ export type ProofVerifier = (
  * 7. senderPk on BabyJubJub curve
  * 8. Nonce not used (on-chain check)
  * 9. Sender has balance (commitment != ZERO_COMMITMENT)
- * 10. EIP-712 signature valid
- * 11. Verify commitment matches amount (recompute commit(amount, r))
- * 12. Verify client ZK proof (if proofVerifier provided)
+ * 10. EIP-712 signature valid (includes beta + ciphertextHash)
+ * 11. Verify client ZK proof (if proofVerifier provided)
  */
 export async function verifyConfidential(
   signer: FacilitatorEvmSigner,
@@ -89,7 +98,7 @@ export async function verifyConfidential(
   try {
     const nonceUsed = (await signer.readContract({
       address: confidentialToken,
-      abi: privateBalanceABI,
+      abi: mercesABI,
       functionName: "isNonceUsed",
       args: [payer, BigInt(confidentialPayload.authorization.nonce)],
     })) as boolean;
@@ -105,7 +114,7 @@ export async function verifyConfidential(
   try {
     const balanceCommitment = (await signer.readContract({
       address: confidentialToken,
-      abi: privateBalanceABI,
+      abi: mercesABI,
       functionName: "getBalanceCommitment",
       args: [payer],
     })) as bigint;
@@ -122,9 +131,10 @@ export async function verifyConfidential(
     // If balance check fails, continue — MPC will reject later if funds insufficient
   }
 
-  // 10. EIP-712 signature valid
+  // 10. EIP-712 signature valid (includes beta + ciphertextHash)
   const chainId = parseInt(requirements.network.split(":")[1]);
   const ciphertextHash = hashCiphertext(ct);
+  const beta = BigInt(confidentialPayload.authorization.beta);
 
   const domain = {
     name: extra.eip712Domain.name,
@@ -138,6 +148,7 @@ export async function verifyConfidential(
     receiver: getAddress(confidentialPayload.authorization.receiver),
     amountCommitment: commitment,
     ciphertextHash,
+    beta,
     nonce: BigInt(confidentialPayload.authorization.nonce),
     deadline: BigInt(confidentialPayload.authorization.deadline),
   };
@@ -147,7 +158,7 @@ export async function verifyConfidential(
       address: payer,
       domain,
       types: transferFromTypes,
-      primaryType: "TransferFrom",
+      primaryType: "TransferFromAuthorization",
       message,
       signature: confidentialPayload.signature,
     });
@@ -159,25 +170,7 @@ export async function verifyConfidential(
     return { isValid: false, invalidReason: "signature_verification_failed", payer };
   }
 
-  // 11. Verify commitment matches amount (recompute commit(amount, r))
-  if (confidentialPayload.blindingFactor) {
-    try {
-      const expectedCommitment = (await signer.readContract({
-        address: confidentialToken,
-        abi: privateBalanceABI,
-        functionName: "commit",
-        args: [BigInt(requirements.amount), BigInt(confidentialPayload.blindingFactor)],
-      })) as bigint;
-
-      if (expectedCommitment !== commitment) {
-        return { isValid: false, invalidReason: "commitment_mismatch", payer };
-      }
-    } catch {
-      return { isValid: false, invalidReason: "commitment_recomputation_failed", payer };
-    }
-  }
-
-  // 12. Verify client ZK proof (if proofVerifier provided)
+  // 11. Verify client ZK proof (if proofVerifier provided)
   if (proofVerifier) {
     if (!confidentialPayload.clientProof) {
       return { isValid: false, invalidReason: "missing_client_proof", payer };
@@ -195,7 +188,11 @@ export async function verifyConfidential(
     ];
 
     try {
-      const proofValid = await proofVerifier(confidentialPayload.clientProof, publicSignals);
+      const proofValid = await proofVerifier(
+        confidentialPayload.clientProof,
+        publicSignals,
+        confidentialPayload.authorization.beta,
+      );
       if (!proofValid) {
         return { isValid: false, invalidReason: "invalid_client_proof", payer };
       }

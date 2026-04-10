@@ -8,7 +8,7 @@ export const BN254_PRIME = BigInt(
 
 /**
  * Poseidon2 commitment to (0, 0) with domain separator 0xDEADBEEF.
- * Used as the "zero balance" sentinel in the contract.
+ * Used as the "zero balance" sentinel in the Merces contract.
  */
 export const ZERO_COMMITMENT = BigInt(
   "0x087f763a403ee4109adc79d4a7638af3cb8cb6a33f5b027bd1476ffa97361acb",
@@ -26,24 +26,27 @@ export const BABY_JUBJUB_A = BigInt(168700);
 export const BABY_JUBJUB_D = BigInt(168696);
 
 /**
- * EIP-712 typed data types for the TransferFrom authorization.
- * Must match the TRANSFER_FROM_TYPEHASH in priv_balance.sol.
+ * EIP-712 typed data types for the TransferFromAuthorization.
+ * Must match the TRANSFER_FROM_TYPEHASH in Merces.sol:
+ *   "TransferFromAuthorization(address sender,address receiver,uint256 amountCommitment,
+ *    bytes32 ciphertextHash,uint256 beta,uint256 nonce,uint256 deadline)"
  */
 export const transferFromTypes = {
-  TransferFrom: [
+  TransferFromAuthorization: [
     { name: "sender", type: "address" },
     { name: "receiver", type: "address" },
     { name: "amountCommitment", type: "uint256" },
     { name: "ciphertextHash", type: "bytes32" },
+    { name: "beta", type: "uint256" },
     { name: "nonce", type: "uint256" },
     { name: "deadline", type: "uint256" },
   ],
 } as const;
 
 /**
- * Minimal ABI for the PrivateBalance contract functions used by the confidential scheme.
+ * Minimal ABI for the Merces contract functions used by the confidential scheme.
  */
-export const privateBalanceABI = [
+export const mercesABI = [
   {
     type: "function",
     name: "transferFrom",
@@ -51,6 +54,7 @@ export const privateBalanceABI = [
       { name: "sender", type: "address" },
       { name: "receiver", type: "address" },
       { name: "amountCommitment", type: "uint256" },
+      { name: "beta", type: "uint256" },
       {
         name: "ciphertext",
         type: "tuple",
@@ -58,7 +62,7 @@ export const privateBalanceABI = [
           { name: "amount", type: "uint256[3]" },
           { name: "r", type: "uint256[3]" },
           {
-            name: "sender_pk",
+            name: "senderPk",
             type: "tuple",
             components: [
               { name: "x", type: "uint256" },
@@ -67,18 +71,10 @@ export const privateBalanceABI = [
           },
         ],
       },
+      { name: "proof", type: "uint256[4]" },
       { name: "nonce", type: "uint256" },
       { name: "deadline", type: "uint256" },
       { name: "signature", type: "bytes" },
-      {
-        name: "clientProof",
-        type: "tuple",
-        components: [
-          { name: "pA", type: "uint256[2]" },
-          { name: "pB", type: "uint256[2][2]" },
-          { name: "pC", type: "uint256[2]" },
-        ],
-      },
     ],
     outputs: [{ name: "", type: "uint256" }],
     stateMutability: "nonpayable",
@@ -87,7 +83,7 @@ export const privateBalanceABI = [
     type: "function",
     name: "isNonceUsed",
     inputs: [
-      { name: "account", type: "address" },
+      { name: "sender", type: "address" },
       { name: "nonce", type: "uint256" },
     ],
     outputs: [{ name: "", type: "bool" }],
@@ -102,28 +98,48 @@ export const privateBalanceABI = [
   },
   {
     type: "function",
-    name: "commit",
-    inputs: [
-      { name: "input", type: "uint256" },
-      { name: "randomness", type: "uint256" },
+    name: "getMpcPublicKeys",
+    inputs: [],
+    outputs: [
+      {
+        name: "",
+        type: "tuple",
+        components: [
+          { name: "x", type: "uint256" },
+          { name: "y", type: "uint256" },
+        ],
+      },
+      {
+        name: "",
+        type: "tuple",
+        components: [
+          { name: "x", type: "uint256" },
+          { name: "y", type: "uint256" },
+        ],
+      },
+      {
+        name: "",
+        type: "tuple",
+        components: [
+          { name: "x", type: "uint256" },
+          { name: "y", type: "uint256" },
+        ],
+      },
     ],
-    outputs: [{ name: "", type: "uint256" }],
     stateMutability: "view",
   },
   {
     type: "function",
-    name: "usedNonces",
-    inputs: [
-      { name: "", type: "address" },
-      { name: "", type: "uint256" },
-    ],
-    outputs: [{ name: "", type: "bool" }],
+    name: "getQueueSize",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
     stateMutability: "view",
   },
 ] as const;
 
 /**
  * ABI encoding parameters for the Ciphertext struct, used for keccak256 hashing.
+ * Must match the Solidity struct layout: Ciphertext { uint256[3] amount, uint256[3] r, BabyJubJub.Affine senderPk }
  */
 export const ciphertextAbiType = {
   type: "tuple",
@@ -131,7 +147,7 @@ export const ciphertextAbiType = {
     { name: "amount", type: "uint256[3]" },
     { name: "r", type: "uint256[3]" },
     {
-      name: "sender_pk",
+      name: "senderPk",
       type: "tuple",
       components: [
         { name: "x", type: "uint256" },
@@ -140,3 +156,8 @@ export const ciphertextAbiType = {
     },
   ],
 } as const;
+
+/**
+ * @deprecated Use `mercesABI` instead. Kept for backwards compatibility.
+ */
+export const privateBalanceABI = mercesABI;

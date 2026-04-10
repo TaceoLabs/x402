@@ -2,19 +2,24 @@ import { PaymentRequirements, PaymentPayloadResult } from "@x402/core/types";
 import { getAddress } from "viem";
 import { ClientEvmSigner } from "../../signer";
 import { transferFromTypes } from "../constants";
-import { ConfidentialEvmPayload, ConfidentialExtra, ConfidentialCiphertext, Groth16Proof, BabyJubJubPoint } from "../types";
+import { ConfidentialEvmPayload, ConfidentialExtra, ConfidentialCiphertext, CompressedGroth16Proof, BabyJubJubPoint } from "../types";
 import { randomFieldElement, createCiphertext, hashCiphertext } from "../crypto";
 
 /**
- * Callback type for generating a ZK proof of commitment + secret sharing + encryption.
- * Returns the proof, commitment, and ciphertext (encrypted shares from circuit output).
+ * Callback type for generating a compressed Groth16 ZK proof of
+ * commitment + secret sharing + BabyJubJub ECDH encryption.
+ *
+ * Returns the compressed proof (4 field elements), beta (random challenge),
+ * commitment, and ciphertext (encrypted shares from circuit output).
  */
 export type ProofGenerator = (
   amount: bigint,
   r: bigint,
   mpcPublicKeys: [BabyJubJubPoint, BabyJubJubPoint, BabyJubJubPoint],
 ) => Promise<{
-  proof: Groth16Proof;
+  proof: CompressedGroth16Proof;
+  /** Random challenge for compressed proof verification. */
+  beta: bigint;
   amountCommitment: bigint;
   ciphertext: ConfidentialCiphertext;
 }>;
@@ -22,10 +27,9 @@ export type ProofGenerator = (
 /**
  * Creates a confidential transferFrom payload with EIP-712 signature.
  *
- * 1. Generates random blinding factor and computes Poseidon2 commitment (via on-chain call or ZK proof)
- * 2. Creates 3-of-3 secret shares of amount and randomness
- * 3. Signs EIP-712 TransferFrom authorization
- * 4. Returns the payload
+ * 1. Generates random blinding factor and computes commitment + ciphertext (via ZK proof or legacy path)
+ * 2. Signs EIP-712 TransferFromAuthorization including beta and ciphertextHash
+ * 3. Returns the payload ready for the facilitator to submit
  */
 export async function createTransferFromPayload(
   signer: ClientEvmSigner,
@@ -50,16 +54,18 @@ export async function createTransferFromPayload(
 
   let amountCommitment: bigint;
   let ciphertext: ConfidentialCiphertext;
-  let clientProof: Groth16Proof | undefined;
+  let clientProof: CompressedGroth16Proof | undefined;
+  let beta: bigint = BigInt(0);
 
   if (proofGenerator) {
-    // ZK proof path: circuit computes commitment + encrypted shares
+    // ZK proof path: circuit computes commitment + encrypted shares + compressed proof
     const result = await proofGenerator(amount, r, extra.mpcPublicKeys);
     amountCommitment = result.amountCommitment;
     ciphertext = result.ciphertext;
     clientProof = result.proof;
+    beta = result.beta;
   } else {
-    // Legacy path: on-chain commitment + plaintext shares
+    // Legacy path: on-chain commitment + plaintext shares (no proof, no beta)
     amountCommitment = (await signer.readContract({
       address: confidentialToken,
       abi: [
@@ -81,15 +87,15 @@ export async function createTransferFromPayload(
     ciphertext = createCiphertext(amount, r);
   }
 
-  // 4. Generate random nonce and compute deadline
+  // 2. Generate random nonce and compute deadline
   const nonce = randomFieldElement();
   const now = Math.floor(Date.now() / 1000);
   const deadline = BigInt(now + paymentRequirements.maxTimeoutSeconds);
 
-  // 5. Compute ciphertext hash for signing
+  // 3. Compute ciphertext hash for EIP-712 signing
   const ciphertextHash = hashCiphertext(ciphertext);
 
-  // 6. Sign EIP-712 TransferFrom authorization
+  // 4. Sign EIP-712 TransferFromAuthorization
   const domain = {
     name: extra.eip712Domain.name,
     version: extra.eip712Domain.version,
@@ -102,6 +108,7 @@ export async function createTransferFromPayload(
     receiver,
     amountCommitment,
     ciphertextHash,
+    beta,
     nonce,
     deadline,
   };
@@ -109,23 +116,23 @@ export async function createTransferFromPayload(
   const signature = await signer.signTypedData({
     domain,
     types: transferFromTypes,
-    primaryType: "TransferFrom",
+    primaryType: "TransferFromAuthorization",
     message,
   });
 
-  // 7. Build the payload
+  // 5. Build the payload
   const payload: ConfidentialEvmPayload = {
     signature,
     authorization: {
       sender: getAddress(signer.address),
       receiver,
       amountCommitment: amountCommitment.toString(),
+      beta: beta.toString(),
       ciphertext,
       nonce: nonce.toString(),
       deadline: deadline.toString(),
     },
     clientProof,
-    blindingFactor: r.toString(),
   };
 
   return {

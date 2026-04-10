@@ -1,5 +1,5 @@
 /**
- * A point on the BabyJubJub curve (x, y coordinates as hex strings).
+ * A point on the BabyJubJub curve (x, y coordinates as decimal strings).
  */
 export type BabyJubJubPoint = {
   x: string;
@@ -7,7 +7,7 @@ export type BabyJubJubPoint = {
 };
 
 /**
- * Ciphertext containing 3-of-3 secret shares of amount and randomness,
+ * Ciphertext containing 3-of-3 encrypted secret shares of amount and randomness,
  * plus an ephemeral BabyJubJub public key.
  */
 export type ConfidentialCiphertext = {
@@ -23,13 +23,27 @@ export type ConfidentialAuthorization = {
   sender: `0x${string}`;
   receiver: `0x${string}`;
   amountCommitment: string;
+  /** Random challenge for compressed proof verification. */
+  beta: string;
   ciphertext: ConfidentialCiphertext;
   nonce: string;
   deadline: string;
 };
 
 /**
- * Groth16 proof for client-side ZK verification.
+ * Compressed Groth16 proof (4 field elements).
+ *
+ * Uses the proof compression technique from https://eprint.iacr.org/2025/1500
+ * to reduce the on-chain verification cost. The verifier contract receives
+ * [beta, gamma, alpha] as the 3 compressed public inputs.
+ */
+export type CompressedGroth16Proof = {
+  compressedProof: [string, string, string, string];
+};
+
+/**
+ * Legacy uncompressed Groth16 proof (pA, pB, pC).
+ * Kept for backwards compatibility with the old PrivateBalance contract.
  */
 export type Groth16Proof = {
   pA: [string, string];
@@ -43,8 +57,8 @@ export type Groth16Proof = {
 export type ConfidentialEvmPayload = {
   signature: `0x${string}`;
   authorization: ConfidentialAuthorization;
-  clientProof?: Groth16Proof;
-  /** Blinding factor r — sent in plaintext so facilitator can recompute commit(amount, r) */
+  clientProof?: CompressedGroth16Proof;
+  /** @deprecated Legacy blinding factor — not used with Merces contracts. */
   blindingFactor?: string;
 };
 

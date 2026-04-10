@@ -80,12 +80,11 @@ describe("ConfidentialEvmScheme (Client)", () => {
       expect(mockSigner.readContract).toHaveBeenCalled();
     });
 
-    it("should include blinding factor in payload", async () => {
+    it("should include beta in authorization (defaults to 0 without proofGenerator)", async () => {
       const scheme = new ConfidentialEvmScheme(mockSigner);
       const result = await scheme.createPaymentPayload(2, makeRequirements());
-      expect(result.payload.blindingFactor).toBeDefined();
-      // Blinding factor should be a numeric string (field element)
-      expect(BigInt(result.payload.blindingFactor!)).toBeLessThan(BN254_PRIME);
+      expect(result.payload.authorization.beta).toBeDefined();
+      expect(result.payload.authorization.beta).toBe("0");
     });
 
     it("should sign an EIP-712 typed data message", async () => {
@@ -114,11 +113,8 @@ describe("ConfidentialEvmScheme (Client)", () => {
   describe("createPaymentPayload (ZK proof path)", () => {
     it("should use proofGenerator when provided", async () => {
       const mockProofGenerator: ProofGenerator = vi.fn().mockResolvedValue({
-        proof: {
-          pA: ["1", "2"],
-          pB: [["3", "4"], ["5", "6"]],
-          pC: ["7", "8"],
-        },
+        proof: { compressedProof: ["1", "2", "3", "4"] },
+        beta: 42n,
         amountCommitment: 99999n,
         ciphertext: {
           amount: ["10", "20", "30"],
@@ -132,13 +128,15 @@ describe("ConfidentialEvmScheme (Client)", () => {
 
       expect(mockProofGenerator).toHaveBeenCalledTimes(1);
       expect(result.payload.clientProof).toBeDefined();
-      expect(result.payload.clientProof!.pA).toEqual(["1", "2"]);
+      expect(result.payload.clientProof!.compressedProof).toEqual(["1", "2", "3", "4"]);
       expect(result.payload.authorization.amountCommitment).toBe("99999");
+      expect(result.payload.authorization.beta).toBe("42");
     });
 
     it("should NOT call readContract when proofGenerator is provided", async () => {
       const mockProofGenerator: ProofGenerator = vi.fn().mockResolvedValue({
-        proof: { pA: ["0", "0"], pB: [["0", "0"], ["0", "0"]], pC: ["0", "0"] },
+        proof: { compressedProof: ["0", "0", "0", "0"] },
+        beta: 0n,
         amountCommitment: 1n,
         ciphertext: {
           amount: ["0", "0", "0"],
@@ -156,7 +154,8 @@ describe("ConfidentialEvmScheme (Client)", () => {
 
     it("should pass mpcPublicKeys from requirements to proofGenerator", async () => {
       const mockProofGenerator: ProofGenerator = vi.fn().mockResolvedValue({
-        proof: { pA: ["0", "0"], pB: [["0", "0"], ["0", "0"]], pC: ["0", "0"] },
+        proof: { compressedProof: ["0", "0", "0", "0"] },
+        beta: 0n,
         amountCommitment: 1n,
         ciphertext: {
           amount: ["0", "0", "0"],

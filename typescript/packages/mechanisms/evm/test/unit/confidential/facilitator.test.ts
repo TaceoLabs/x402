@@ -5,7 +5,7 @@ import type { ClientEvmSigner, FacilitatorEvmSigner } from "../../../src/signer"
 import type { PaymentPayload, PaymentRequirements } from "@x402/core/types";
 import type { ProofVerifier } from "../../../src/confidential/facilitator/verify";
 import { ZERO_COMMITMENT, BN254_PRIME } from "../../../src/confidential/constants";
-import type { BabyJubJubPoint, ConfidentialEvmPayload } from "../../../src/confidential/types";
+import type { BabyJubJubPoint, ConfidentialEvmPayload, CompressedGroth16Proof } from "../../../src/confidential/types";
 
 // BabyJubJub base point
 const BJJ_BASE: BabyJubJubPoint = {
@@ -198,22 +198,6 @@ describe("ConfidentialEvmScheme (Facilitator)", () => {
       expect(result.invalidReason).toBe("invalid_signature");
     });
 
-    it("should reject if commitment doesn't match recomputed value", async () => {
-      mockFacilitatorSigner.readContract = vi.fn().mockImplementation(
-        async (args: { functionName: string }) => {
-          if (args.functionName === "isNonceUsed") return false;
-          if (args.functionName === "getBalanceCommitment") return 99999n;
-          if (args.functionName === "commit") return 99999n; // Different from the 12345n the client used
-          return 0n;
-        },
-      );
-
-      const { fullPayload, requirements } = await createValidPayload();
-      const result = await facilitator.verify(fullPayload, requirements);
-      expect(result.isValid).toBe(false);
-      expect(result.invalidReason).toBe("commitment_mismatch");
-    });
-
     it("should reject if payload format is invalid", async () => {
       const requirements = makeRequirements();
       const badPayload: PaymentPayload = {
@@ -260,11 +244,8 @@ describe("ConfidentialEvmScheme (Facilitator)", () => {
       });
 
       const { fullPayload, requirements } = await createValidPayload();
-      // Add a proof so it passes the "missing" check
       (fullPayload.payload as ConfidentialEvmPayload).clientProof = {
-        pA: ["1", "2"],
-        pB: [["3", "4"], ["5", "6"]],
-        pC: ["7", "8"],
+        compressedProof: ["1", "2", "3", "4"],
       };
 
       const result = await facilitatorWithProof.verify(fullPayload, requirements);
@@ -272,7 +253,7 @@ describe("ConfidentialEvmScheme (Facilitator)", () => {
       expect(result.invalidReason).toBe("invalid_client_proof");
     });
 
-    it("should pass 15 public signals to the proof verifier", async () => {
+    it("should pass 15 public signals and beta to the proof verifier", async () => {
       const proofVerifier: ProofVerifier = vi.fn().mockResolvedValue(true);
       const facilitatorWithProof = new ConfidentialEvmScheme({
         signer: mockFacilitatorSigner,
@@ -284,17 +265,16 @@ describe("ConfidentialEvmScheme (Facilitator)", () => {
 
       const { fullPayload, requirements } = await createValidPayload();
       (fullPayload.payload as ConfidentialEvmPayload).clientProof = {
-        pA: ["1", "2"],
-        pB: [["3", "4"], ["5", "6"]],
-        pC: ["7", "8"],
+        compressedProof: ["1", "2", "3", "4"],
       };
 
       await facilitatorWithProof.verify(fullPayload, requirements);
 
-      // ProofVerifier should receive 15 public signals
+      // ProofVerifier should receive (proof, publicSignals[15], beta)
       const calls = (proofVerifier as ReturnType<typeof vi.fn>).mock.calls;
       expect(calls.length).toBe(1);
-      expect(calls[0][1]).toHaveLength(15);
+      expect(calls[0][1]).toHaveLength(15); // publicSignals
+      expect(calls[0][2]).toBeDefined(); // beta
     });
   });
 
