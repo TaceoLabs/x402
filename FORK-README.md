@@ -33,10 +33,10 @@ relative paths, so the two repos must be checked out side-by-side:
 
 ```
 <some-parent>/
-├── Merces1_updated/        ← TaceoLabs/Merces1_updated @ feat/x402-demo
-│   └── x402-demo/          ← the actual runnable demo
+├── Merces1_updated/        ← Merces repo (the runnable demo lives in x402-demo/)
+│   └── x402-demo/
 └── x402/
-    └── repo/               ← TaceoLabs/x402 @ feat/real-mpc-integration  (this branch)
+    └── repo/               ← this fork
 ```
 
 See `Merces1_updated/x402-demo/README.md` for setup + run instructions.
